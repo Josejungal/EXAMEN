@@ -31,13 +31,70 @@
 
   <label>Resultado y Proceso Paso a Paso:</label>
   <pre id="resultado">Esperando datos...</pre>
-
   <div id="grafico" style="margin-top: 40px;"></div>
 </div>
 
 <script>
-// Se mantiene parseExpr, extraerVariables y formatearTabla igual...
-// Se modifica solo resolverSimplexPasoAPaso para incluir explicación tipo Gauss-Jordan
+function extraerVariables(texto) {
+  const vars = new Set((texto.match(/[a-z]/gi) || []).map(v => v.toLowerCase()));
+  vars.delete('z');
+  return Array.from(vars).sort();
+}
+
+function parseExpr(expr, variables) {
+  const vars = {};
+  const terms = expr.match(/[+-]?\s*\d*\.?\d*\s*[a-z]/gi);
+  if (terms) {
+    for (let term of terms) {
+      const match = term.match(/([+-]?\s*\d*\.?\d*)\s*([a-z])/i);
+      if (!match) continue;
+      let coef = match[1].replace(/\s/g, '');
+      coef = coef === '' || coef === '+' ? 1 : coef === '-' ? -1 : parseFloat(coef);
+      vars[match[2].toLowerCase()] = coef;
+    }
+  }
+  return variables.map(v => vars[v] || 0);
+}
+
+function formatearTabla(matrix, headers) {
+  const headerRow = headers.map(h => h.padStart(6)).join(' ');
+  const rows = matrix.map(row => row.map(v => v.toFixed(2).padStart(6)).join(' '));
+  return [headerRow, ...rows].join('\n');
+}
+
+function graficarRestricciones(A, b, variables, tableau) {
+  const grafico = document.getElementById('grafico');
+  const traces = [];
+
+  for (let i = 0; i < A.length; i++) {
+    const a = A[i][0] || 0;
+    const b1 = A[i][1] || 0;
+    const rhs = b[i];
+    const x = [0, rhs / (a !== 0 ? a : 1)];
+    const y = x.map(val => (rhs - a * val) / (b1 !== 0 ? b1 : 1));
+    traces.push({ x: x, y: y, mode: 'lines', name: `Restricción ${i + 1}` });
+  }
+
+  const solX = tableau.find(r => r[1] === 1)?.[tableau[0].length - 1] || 0;
+  const solY = tableau.find(r => r[2] === 1)?.[tableau[0].length - 1] || 0;
+
+  traces.push({
+    x: [solX],
+    y: [solY],
+    mode: 'markers+text',
+    text: ['Óptimo'],
+    textposition: 'top center',
+    marker: { size: 10, color: 'red', symbol: 'star' },
+    name: 'Solución Óptima'
+  });
+
+  Plotly.newPlot(grafico, traces, {
+    title: 'Gráfico del Método Simplex',
+    xaxis: { title: 'x', range: [0, 50] },
+    yaxis: { title: 'y', range: [0, 50] },
+    margin: { t: 40 }
+  });
+}
 
 function resolverSimplexPasoAPaso() {
   const objText = document.getElementById('objetivo').value.toLowerCase();
@@ -84,14 +141,16 @@ function resolverSimplexPasoAPaso() {
   const tableau = A.map((row, i) => {
     const slack = Array(numRes).fill(0);
     slack[i] = 1;
-    return [0, ...row, ...slack, b[i]]; // Z como primera columna
+    return [0, ...row, ...slack, b[i]];
   });
 
   const zRow = [1, ...c.map(v => -v), ...Array(numRes).fill(0), 0];
   tableau.push(zRow);
 
-  const varNames = ['Z', ...variables, ...Array.from({length: numRes}, (_, i) => `s${i+1}`), 'RHS'];
-  let pasos = ['1. Igualamos restricciones agregando variables de holgura:', formatearTabla(tableau, varNames)];
+  const varNames = ['Z', ...variables, ...Array.from({ length: numRes }, (_, i) => `s${i + 1}`), 'RHS'];
+  const baseVars = Array.from({ length: numRes }, (_, i) => `s${i + 1}`);
+
+  let pasos = ['1. Tabla inicial con variables de holgura:', formatearTabla(tableau, varNames)];
 
   let iter = 0;
   while (true) {
@@ -111,18 +170,22 @@ function resolverSimplexPasoAPaso() {
       break;
     }
 
-    pasos.push(`\nIteración ${++iter}: Gauss-Jordan para hacer pivote en fila ${pivotRow + 1}, columna ${pivotCol + 1}`);
+    const entering = varNames[pivotCol + 1];
+    const leaving = baseVars[pivotRow];
+    baseVars[pivotRow] = entering;
+
+    pasos.push(`\nIteración ${++iter}: entra ${entering}, sale ${leaving}`);
 
     const pivotVal = tableau[pivotRow][pivotCol + 1];
     tableau[pivotRow] = tableau[pivotRow].map(v => v / pivotVal);
-    pasos.push(`Dividimos fila ${pivotRow + 1} entre ${pivotVal.toFixed(2)} para que pivote valga 1.`);
+    pasos.push(`Dividimos fila ${pivotRow + 1} entre ${pivotVal.toFixed(2)}.`);
 
     for (let i = 0; i < tableau.length; i++) {
       if (i !== pivotRow) {
         const factor = tableau[i][pivotCol + 1];
         const rowCopy = [...tableau[pivotRow]];
         tableau[i] = tableau[i].map((v, j) => v - factor * rowCopy[j]);
-        pasos.push(`Restamos ${factor.toFixed(2)} * fila ${pivotRow + 1} a fila ${i + 1}`);
+        pasos.push(`Restamos ${factor.toFixed(2)} × fila ${pivotRow + 1} a fila ${i + 1}`);
       }
     }
     pasos.push(formatearTabla(tableau, varNames));
@@ -131,15 +194,15 @@ function resolverSimplexPasoAPaso() {
   const zOpt = tableau[tableau.length - 1][tableau[0].length - 1];
   pasos.push(`\nSolución óptima: Z = ${zOpt.toFixed(2)}`);
 
-  for (let i = 1; i <= variables.length; i++) {
-    const col = tableau.map(row => row[i]);
-    const isBasic = col.slice(0, -1).filter((v, idx) => v === 1 && col[idx] !== 0).length === 1 &&
-                    col.slice(0, -1).filter(v => v !== 0 && v !== 1).length === 0;
-    const val = isBasic ? tableau[col.indexOf(1)][tableau[0].length - 1] : 0;
-    pasos.push(`${variables[i - 1]} = ${val.toFixed(2)}`);
+  for (let i = 0; i < numRes; i++) {
+    pasos.push(`${baseVars[i]} = ${tableau[i][tableau[0].length - 1].toFixed(2)}`);
+  }
+  for (let v of variables) {
+    if (!baseVars.includes(v)) pasos.push(`${v} = 0.00`);
   }
 
   resultado.textContent = pasos.join('\n');
+  graficarRestricciones(A, b, variables, tableau);
 }
 </script>
 </body>

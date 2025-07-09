@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Calculadora Simplex Mejorada (Paso a Paso)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
     body { font-family: 'Segoe UI', sans-serif; background: #f4f7f8; padding: 20px; color: #333; }
     .container { max-width: 900px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
@@ -30,6 +31,8 @@
 
   <label>Resultado y Proceso Paso a Paso:</label>
   <pre id="resultado">Esperando datos...</pre>
+
+  <div id="grafico" style="margin-top: 40px;"></div>
 </div>
 
 <script>
@@ -83,11 +86,11 @@ function resolverSimplexPasoAPaso() {
     return [...row, ...slack, b[i]];
   });
 
-  const zRow = [...c.map(v => -v), ...Array(numRes).fill(0), 0];
+  const zRow = [0, ...c.map(v => -v), ...Array(numRes).fill(0), 0];
   tableau.push(zRow);
 
   let pasos = [];
-  const varNames = [...variables, ...Array.from({length: numRes}, (_, i) => `s${i+1}`), 'RHS'];
+  const varNames = ['Z', ...variables, ...Array.from({length: numRes}, (_, i) => `s${i+1}`), 'RHS'];
 
   pasos.push('Tabla inicial con variables de holgura:');
   pasos.push(formatearTabla(tableau, varNames));
@@ -95,11 +98,11 @@ function resolverSimplexPasoAPaso() {
   let iter = 0;
   while (true) {
     const lastRow = tableau[tableau.length -1];
-    const minVal = Math.min(...lastRow.slice(0, lastRow.length -1));
+    const minVal = Math.min(...lastRow.slice(1, lastRow.length -1));
 
     if (minVal >= 0) break;
 
-    const pivotCol = lastRow.indexOf(minVal);
+    const pivotCol = lastRow.findIndex((v, idx) => idx > 0 && v === minVal);
 
     const ratios = tableau.slice(0, -1).map(row => {
       const val = row[pivotCol];
@@ -137,12 +140,54 @@ function resolverSimplexPasoAPaso() {
   pasos.push(`Solución óptima Z = ${zOpt.toFixed(2)}`);
 
   resultado.textContent = pasos.join('\n\n');
+
+  graficarRestricciones(A, b, c, tableau);
 }
 
 function formatearTabla(matrix, headers) {
   const headerRow = headers.map(h => h.padStart(6)).join(' ');
   const rows = matrix.map(row => row.map(v => v.toFixed(2).padStart(6)).join(' '));
   return [headerRow, ...rows].join('\n');
+}
+
+function graficarRestricciones(A, b, c, tableau) {
+  const grafico = document.getElementById('grafico');
+  const traces = [];
+
+  for (let i = 0; i < A.length; i++) {
+    const a = A[i][0] || 0;
+    const b1 = A[i][1] || 0;
+    const rhs = b[i];
+    const x = [0, rhs / (a !== 0 ? a : 1)];
+    const y = x.map(val => (rhs - a * val) / (b1 !== 0 ? b1 : 1));
+
+    traces.push({
+      x: x,
+      y: y,
+      mode: 'lines',
+      name: `Restricción ${i + 1}`
+    });
+  }
+
+  const solX = tableau.find(r => r[1] === 1)?.[tableau[0].length -1] || 0;
+  const solY = tableau.find(r => r[2] === 1)?.[tableau[0].length -1] || 0;
+
+  traces.push({
+    x: [solX],
+    y: [solY],
+    mode: 'markers+text',
+    text: ['Óptimo'],
+    textposition: 'top center',
+    marker: { size: 10, color: 'red', symbol: 'star' },
+    name: 'Solución Óptima'
+  });
+
+  Plotly.newPlot(grafico, traces, {
+    title: 'Gráfico del Método Simplex',
+    xaxis: { title: 'x', range: [0, 50] },
+    yaxis: { title: 'y', range: [0, 50] },
+    margin: { t: 40 }
+  });
 }
 </script>
 </body>

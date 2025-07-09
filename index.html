@@ -56,6 +56,23 @@
       white-space: pre-wrap;
       margin-top: 20px;
     }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    table, th, td {
+      border: 1px solid #ccc;
+    }
+    th, td {
+      padding: 8px;
+      text-align: center;
+    }
+    .warning {
+      color: red;
+      margin-top: 10px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -74,22 +91,22 @@
     <pre id="resultado">Esperando datos...</pre>
 
     <label>Iteraciones:</label>
-    <pre id="iteraciones">---</pre>
+    <div id="iteraciones">---</div>
 
     <div id="grafico" style="margin-top: 40px;"></div>
   </div>
 
   <script>
     function parseExpr(expr) {
-      const terms = expr.match(/[+-]?\\s*\\d*\\.?\\d*\\s*x\\d+/g);
+      const terms = expr.match(/[+-]?\s*\d*\.?\d*\s*x\d+/g);
       const values = [];
       if (terms) {
         for (let term of terms) {
-          const match = term.match(/([+-]?\\s*\\d*\\.?\\d*)\\s*x(\\d+)/);
-          let coef = match[1].replace(/\\s/g, '');
+          const match = term.match(/([+-]?\s*\d*\.?\d*)\s*x(\d+)/);
+          let coef = match[1].replace(/\s/g, '');
           coef = coef === '' || coef === '+' ? 1 : coef === '-' ? -1 : parseFloat(coef);
           let index = parseInt(match[2]) - 1;
-          values[index] = coef;
+          values[index] = coef || 0;
         }
       }
       return values;
@@ -97,9 +114,16 @@
 
     function resolverSimplex() {
       const objInput = document.getElementById('objetivo').value.toLowerCase();
-      const resInput = document.getElementById('restricciones').value.trim().split('\\n');
+      const resInput = document.getElementById('restricciones').value.trim().split('\n');
       const resultado = document.getElementById('resultado');
       const iteracionesOut = document.getElementById('iteraciones');
+      const grafico = document.getElementById('grafico');
+      grafico.innerHTML = '';
+
+      if (!objInput.includes('max') && !objInput.includes('min')) {
+        resultado.textContent = 'Error: la función objetivo debe comenzar con "max" o "min".';
+        return;
+      }
 
       let max = objInput.includes('max');
       let obj = parseExpr(objInput);
@@ -141,7 +165,7 @@
       let logs = [];
       let iteraciones = 0;
       while (tableau[tableau.length - 1].slice(0, -1).some(v => v < 0) && iteraciones++ < 50) {
-        logs.push(`Iteración ${iteraciones}:\n` + tableau.map(f => f.map(v => v.toFixed(2)).join(' | ')).join('\\n'));
+        logs.push(generarTablaHTML(tableau, iteraciones));
         tableau = pivot(tableau);
       }
 
@@ -156,12 +180,16 @@
         }
       }
 
-      resultado.textContent = `Z óptimo = ${Zopt.toFixed(2)}\\n\\nVariables básicas:\\n` +
-        resultados.map((v, i) => `x${i + 1} = ${v.toFixed(2)}`).join('\\n');
+      resultado.textContent = `Z óptimo = ${Zopt.toFixed(2)}\n\nVariables básicas:\n` +
+        resultados.map((v, i) => `x${i + 1} = ${v.toFixed(2)}`).join('\n');
 
-      iteracionesOut.textContent = logs.join('\\n\\n');
+      iteracionesOut.innerHTML = logs.join('<hr>');
 
-      if (numVars === 2) graficar(constraints, b, obj, signs, resultados, Zopt);
+      if (numVars === 2) {
+        graficar(constraints, b, obj, signs, resultados, Zopt);
+      } else {
+        grafico.innerHTML = '<p class="warning">Nota: El gráfico solo se muestra cuando hay exactamente 2 variables.</p>';
+      }
     }
 
     function pivot(t) {
@@ -188,8 +216,18 @@
       return t;
     }
 
+    function generarTablaHTML(matrix, iter) {
+      let html = `<h4>Iteración ${iter}</h4><table><tr>`;
+      for (let i = 0; i < matrix[0].length; i++) html += `<th>Col ${i + 1}</th>`;
+      html += `</tr>`;
+      for (let fila of matrix) {
+        html += `<tr>` + fila.map(v => `<td>${v.toFixed(2)}</td>`).join('') + `</tr>`;
+      }
+      html += `</table>`;
+      return html;
+    }
+
     function graficar(constraints, b, obj, signs, resultados, z) {
-      const grafico = document.getElementById('grafico');
       const traces = [];
 
       for (let i = 0; i < constraints.length; i++) {

@@ -87,8 +87,10 @@ function resolverSimplexPasoAPaso() {
   tableau.push(zRow);
 
   let pasos = [];
+  const varNames = [...variables, ...Array.from({length: numRes}, (_, i) => `s${i+1}`), 'RHS'];
+
   pasos.push('Tabla inicial con variables de holgura:');
-  pasos.push(formatearTabla(tableau));
+  pasos.push(formatearTabla(tableau, varNames));
 
   let iter = 0;
   while (true) {
@@ -105,6 +107,12 @@ function resolverSimplexPasoAPaso() {
     });
 
     const pivotRow = ratios.indexOf(Math.min(...ratios));
+
+    if (pivotRow === -1) {
+      pasos.push('No hay solución factible.');
+      break;
+    }
+
     const pivotVal = tableau[pivotRow][pivotCol];
 
     for (let j = 0; j < tableau[pivotRow].length; j++) {
@@ -122,18 +130,19 @@ function resolverSimplexPasoAPaso() {
 
     iter++;
     pasos.push(`Iteración ${iter}:`);
-    pasos.push(formatearTabla(tableau));
+    pasos.push(formatearTabla(tableau, varNames));
   }
 
   const zOpt = tableau[tableau.length -1][tableau[0].length -1];
-
   pasos.push(`Solución óptima Z = ${zOpt.toFixed(2)}`);
 
-  resultado.textContent = pasos.join('\n');
+  resultado.textContent = pasos.join('\n\n');
 }
 
-function formatearTabla(matrix) {
-  return matrix.map(row => row.map(v => v.toFixed(2).padStart(6)).join(' ')).join('\n');
+function formatearTabla(matrix, headers) {
+  const headerRow = headers.map(h => h.padStart(6)).join(' ');
+  const rows = matrix.map(row => row.map(v => v.toFixed(2).padStart(6)).join(' '));
+  return [headerRow, ...rows].join('\n');
 }
 </script>
 </body>

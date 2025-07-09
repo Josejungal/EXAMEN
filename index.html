@@ -35,6 +35,9 @@
 </div>
 
 <script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
 function extraerVariables(texto) {
   const vars = new Set((texto.match(/[a-z]/gi) || []).map(v => v.toLowerCase()));
   vars.delete('z');
@@ -72,7 +75,7 @@ function graficarRestricciones(A, b, variables, tableau) {
     const rhs = b[i];
     const x = [0, rhs / (a !== 0 ? a : 1)];
     const y = x.map(val => (rhs - a * val) / (b1 !== 0 ? b1 : 1));
-    traces.push({ x: x, y: y, mode: 'lines', name: `Restricción ${i + 1}` });
+    traces.push({ x, y, mode: 'lines', name: `Restricción ${i + 1}` });
   }
 
   const solX = tableau.find(r => r[1] === 1)?.[tableau[0].length - 1] || 0;
@@ -114,7 +117,6 @@ function resolverSimplexPasoAPaso() {
 
   const numVars = variables.length;
   const numRes = resLines.length;
-
   const c = parseExpr(objText, variables);
   if (c.some(isNaN)) {
     resultado.textContent = 'Error al interpretar la función objetivo.';
@@ -143,16 +145,14 @@ function resolverSimplexPasoAPaso() {
     slack[i] = 1;
     return [0, ...row, ...slack, b[i]];
   });
-
   const zRow = [1, ...c.map(v => -v), ...Array(numRes).fill(0), 0];
   tableau.push(zRow);
 
   const varNames = ['Z', ...variables, ...Array.from({ length: numRes }, (_, i) => `s${i + 1}`), 'RHS'];
   const baseVars = Array.from({ length: numRes }, (_, i) => `s${i + 1}`);
-
   let pasos = ['1. Tabla inicial con variables de holgura:', formatearTabla(tableau, varNames)];
-
   let iter = 0;
+
   while (true) {
     const lastRow = tableau.length - 1;
     const costRow = tableau[lastRow].slice(1, -1);
@@ -164,7 +164,6 @@ function resolverSimplexPasoAPaso() {
       return val > 0 ? row[row.length - 1] / val : Infinity;
     });
     const pivotRow = ratios.indexOf(Math.min(...ratios));
-
     if (pivotRow === -1) {
       pasos.push('No hay solución factible.');
       break;
@@ -173,7 +172,6 @@ function resolverSimplexPasoAPaso() {
     const entering = varNames[pivotCol + 1];
     const leaving = baseVars[pivotRow];
     baseVars[pivotRow] = entering;
-
     pasos.push(`\nIteración ${++iter}: entra ${entering}, sale ${leaving}`);
 
     const pivotVal = tableau[pivotRow][pivotCol + 1];
@@ -193,14 +191,12 @@ function resolverSimplexPasoAPaso() {
 
   const zOpt = tableau[tableau.length - 1][tableau[0].length - 1];
   pasos.push(`\nSolución óptima: Z = ${zOpt.toFixed(2)}`);
-
   for (let i = 0; i < numRes; i++) {
     pasos.push(`${baseVars[i]} = ${tableau[i][tableau[0].length - 1].toFixed(2)}`);
   }
   for (let v of variables) {
     if (!baseVars.includes(v)) pasos.push(`${v} = 0.00`);
   }
-
   resultado.textContent = pasos.join('\n');
   graficarRestricciones(A, b, variables, tableau);
 }

@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <title>Solver LP — Texto/Archivo/Imagen (PDF+OCR) • Simplex + Duales</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Libs frontend -->
+  <!-- Libs puramente de front (sin workers externos obligatorios) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.1/math.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
   <!-- OCR -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
-  <!-- pdf.js (sin worker) -->
+  <!-- pdf.js (usaremos disableWorker=true para evitar importScripts) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <!-- Lectores -->
+  <!-- Lectores de archivos opcionales (no usan worker) -->
   <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -42,11 +42,11 @@
     .warn{background:#fff8e1;color:#8d6e00;padding:10px;border-radius:10px;margin:10px 0}
     .err{background:#fdecea;color:#b71c1c;padding:10px;border-radius:10px;margin:10px 0}
     details{margin-top:8px}
-    .graph{width:100%;height:440px}
+    .graph{width:100%;height:420px}
   </style>
 </head>
 <body>
-  <h2>Solver LP — Carga de Archivos, PDF, Imágenes (OCR) y Texto</h2>
+  <h2>🔍 Solver LP — Carga de Archivos, PDF, Imágenes (OCR) y Texto</h2>
   <p class="muted">Resuelve Programación Lineal (LP) a partir de texto, .lp, .mps, PDF o imagen. Sin workers externos (PDF en modo seguro, OCR integrado).</p>
 
   <div class="grid">
@@ -64,12 +64,12 @@
         <button class="btn secondary" id="limpiar">Limpiar</button>
       </div>
       <h3 style="margin-top:12px">o pega el enunciado</h3>
-      <textarea id="entrada" placeholder="Ej.: Max Z = 80x + 50y; 4x + 3y ≤ 240; 2x + y ≤ 100; x,y ≥ 0"></textarea>
+      <textarea id="entrada" placeholder="Ej.: Z = 80x + 50y; 4x + 3y ≤ 240; 2x + y ≤ 100; x,y ≥ 0"></textarea>
       <div class="row" style="margin-top:8px">
         <button class="btn" id="btn-analizar">Analizar y resolver</button>
         <button class="btn secondary" id="btn-tests">Pruebas automáticas</button>
       </div>
-      <div id="archivos" class="muted" style="margin-top:6px;white-space:pre-wrap"></div>
+      <div id="archivos" class="muted" style="margin-top:6px"></div>
       <div id="log" class="muted" style="margin-top:6px;white-space:pre-wrap"></div>
     </div>
 
@@ -98,7 +98,6 @@ const $ = s => document.querySelector(s);
 const byId = id => document.getElementById(id);
 const logArea = byId('log');
 function log(msg){ logArea.textContent += (logArea.textContent? '\n':'') + msg; }
-function fmt(n){ if(n===Infinity) return '∞'; if(n===-Infinity) return '-∞'; const x=Number(n); return (Math.abs(x)%1>1e-9)? x.toFixed(6) : x.toString(); }
 
 /* ===========================
    2) Carga de archivos (incluye OCR y PDF)
@@ -125,15 +124,15 @@ byId('limpiar').addEventListener('click', ()=>{
 async function handleFiles(fileList){
   const files = Array.from(fileList||[]);
   if(!files.length) return;
-  archivos.textContent = files.map(f=>`• ${f.name} (${(f.size/1024).toFixed(1)} KB)`).join('\n');
+  archivos.textContent = files.map(f=>• ${f.name} (${(f.size/1024).toFixed(1)} KB)).join('\n');
   let bloques = [];
   for(const file of files){
     try{
       const txt = await leerArchivo(file);
-      if(txt && txt.trim()) bloques.push(`\n---\n# ${file.name}\n\n${txt.trim()}`);
+      if(txt && txt.trim()) bloques.push(\n---\n# ${file.name}\n\n${txt.trim()});
     }catch(err){
-      log(`Error leyendo ${file.name}: ${err.message}`);
-      bloques.push(`\n---\n# ${file.name}\n\n[Error al leer: ${err.message}]`);
+      log(Error leyendo ${file.name}: ${err.message});
+      bloques.push(\n---\n# ${file.name}\n\n[Error al leer: ${err.message}]);
     }
   }
   entrada.value = (entrada.value + '\n' + bloques.join('\n')).trim();
@@ -161,12 +160,9 @@ async function leerArchivo(file){
   if(ext==='xlsx' || ext==='xls'){
     const buf = await asArrayBuffer(file);
     const wb = XLSX.read(buf, {type:'array'});
-    let out=[];
-    wb.SheetNames.forEach(n=>{
-      const sh = wb.Sheets[n];
-      out.push(`## Hoja: ${n}\n${XLSX.utils.sheet_to_csv(sh)}`);
-    });
-    return out.join('\n');
+    let out=[]; wb.SheetNames.forEach(n=>{
+      const sh = wb.Sheets[n]; out.push(## Hoja: ${n}\n+XLSX.utils.sheet_to_csv(sh));
+    }); return out.join('\n');
   }
   if(ext==='pdf'){
     const buf = await asArrayBuffer(file);
@@ -176,12 +172,13 @@ async function leerArchivo(file){
     const url = URL.createObjectURL(file);
     return await ocrImagen(url);
   }
+  // Fallback genérico
   return asText(file);
 }
 function extraerDeJSON(obj){
   if(typeof obj==='string') return obj;
   if(Array.isArray(obj)) return obj.map(extraerDeJSON).join('\n');
-  if(obj && typeof obj==='object') return Object.entries(obj).map(([k,v])=>`# ${k}\n${extraerDeJSON(v)}`).join('\n');
+  if(obj && typeof obj==='object') return Object.entries(obj).map(([k,v])=># ${k}\n${extraerDeJSON(v)}).join('\n');
   return String(obj);
 }
 async function extraerTextoPDF(arrayBuffer){
@@ -201,7 +198,9 @@ async function extraerTextoPDF(arrayBuffer){
 }
 async function ocrImagen(objectURL){
   try{
-    const { data:{ text } } = await Tesseract.recognize(objectURL, 'spa+eng', { logger: ()=>{} });
+    const { data:{ text } } = await Tesseract.recognize(objectURL, 'spa+eng', {
+      logger: m => {/* opcional: progreso */ }
+    });
     return text || '';
   }catch(err){
     log('OCR error: '+err.message);
@@ -212,113 +211,121 @@ async function ocrImagen(objectURL){
 /* ===========================
    3) Parseo universal (texto libre / .lp / .mps)
    =========================== */
+function esc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
 function normNum(str){
+  // normaliza "1.000,50" o "1,000.50" a "1000.50"
   const s = String(str).trim();
+  // si hay coma y punto, asume formato local -> elimina separadores de miles
   if(/[.,]/.test(s)){
+    // heurística: último separador como decimal
     const last = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
     const head = s.slice(0,last).replace(/[.,]/g,'');
     const dec = s.slice(last+1);
-    if(last>0) return Number(`${head}.${dec}`);
+    if(last>0) return Number(${head}.${dec});
   }
   return Number(s.replace(/,/g,''));
 }
-// Detecta términos como "3x", "-x2", "+ 1.5 y"
-const TERM_RE = /([+\-]?\s*\d*(?:[.,]\d+)?)\s*([a-zA-Z]\w*)/g;
-
 function parseTextoLibre(texto){
+  // acepta: "Z = ax + by", y N variables "Z = 3x1 + 2x2 + ..."
+  // restricciones con <=, >=, =, también símbolos ≤ ≥; no negatividad si se menciona
   const t = texto.replace(/[—–]/g,'-').replace(/≤/g,'<=').replace(/≥/g,'>=');
   const lines = t.split(/\n|;/).map(s=>s.trim()).filter(Boolean);
 
-  // Sentido (por defecto: MAX)
-  let sense = /min(?:imizar|imize)?/i.test(t)? 'min' : 'max';
-
   // Objetivo
+  // Si no se especifica Max/Min, por defecto MAX
+  let sense = /min(?:imizar|imize)?/i.test(t)? 'min' : 'max';
   let c = {}, vars = new Set();
-  let objMatch = t.match(/(?:^|\b)(?:max(?:imizar)?|min(?:imizar)?|z|obj(?:etivo)?|objective)\s*[:=]?\s*([^;\n]+)/i);
+  const objMatch = t.match(/(?:^|\b)(?:z|obj|objetivo|objective)\s*[:=]\s*([^;\n]+)/i)
+                || t.match(/(?:^|\b)(?:max(?:imizar)?|min(?:imizar)?)[^:\n][:=]?\s([^;\n]+)/i);
   if(objMatch){
     const expr = objMatch[1];
-    let m;
-    while((m = TERM_RE.exec(expr))!==null){
-      const coefStr = m[1].replace(/\s+/g,'');
-      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : normNum(coefStr);
-      const v = m[2];
-      c[v] = (c[v]||0) + coef;
-      vars.add(v);
-    }
+    const terms = expr.match(/[+\-]?\s*\d*(?:[.,]\d+)?\s*\?\s[a-zA-Z]\w*/g) || [];
+    terms.forEach(tok=>{
+      const m = tok.match(/([+\-]?\s*\d*(?:[.,]\d+)?)\s*\?\s([a-zA-Z]\w*)/);
+      if(m){
+        const coef = m[1].trim()===''||m[1].trim()==='+'? 1 :
+                     m[1].trim()==='-'? -1 : normNum(m[1]);
+        const v = m[2];
+        c[v] = (c[v]||0) + coef;
+        vars.add(v);
+      }
+    });
   }
-
   // Restricciones
   const cons = [];
   for(const ln of lines){
     const m = ln.match(/^(.+?)\s*(<=|>=|==|=)\s*([+\-]?\d+(?:[.,]\d+)?)\s*$/);
     if(!m) continue;
-    const LHS = m[1], sgn = (m[2]==='=')?'==':m[2], rhs = normNum(m[3]);
+    const LHS = m[1], sgn = m[2]==='='?'==':m[2], rhs = normNum(m[3]);
     const row = {};
-    let mm;
-    while((mm = TERM_RE.exec(LHS))!==null){
-      const coefStr = mm[1].replace(/\s+/g,'');
-      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : normNum(coefStr);
-      const v = mm[2];
-      row[v] = (row[v]||0) + coef;
-      vars.add(v);
-    }
+    const terms = LHS.match(/[+\-]?\s*\d*(?:[.,]\d+)?\s*\?\s[a-zA-Z]\w*/g) || [];
+    terms.forEach(tok=>{
+      const mm = tok.match(/([+\-]?\s*\d*(?:[.,]\d+)?)\s*\?\s([a-zA-Z]\w*)/);
+      if(mm){
+        const coef = mm[1].trim()===''||mm[1].trim()==='+'? 1 :
+                     mm[1].trim()==='-'? -1 : normNum(mm[1]);
+        const v = mm[2];
+        row[v] = (row[v]||0) + coef;
+        vars.add(v);
+      }
+    });
     if(Object.keys(row).length) cons.push({row, sign: sgn, rhs});
   }
-
-  // No negatividad si se menciona (heurística)
+  // Bounds simples por menciones de no negatividad
   const bounds = {};
-  if(/\b(no\s*negativ|x[,\sy]*>=?\s*0|y\s*>=?\s*0)/i.test(t)){
+  if(/(?:\b|,)\s*(?:x|y|[a-z]\w*(?:\s*,\s*[a-z]\w*))\s>=?\s*0/i.test(t) || /no\s*negativ/i.test(t)){
     vars.forEach(v=> bounds[v] = {lb:0});
   }
-
+  // matriz en orden consistente
   const V = Array.from(vars);
   const cvec = V.map(v=> c[v]||0);
-  const A = cons.map(con=> {
+  const A = cons.map(con=>{
     const row = V.map(v=> con.row[v]||0);
     return {...con, rowArr: row};
   });
   return {sense, V, cvec, A, bounds};
 }
 
+// Parser LP simple (secciones Maximize/Minimize, Subject To, Bounds, Binary/General)
 function parseLP(raw){
   const t = raw.replace(/\r/g,'');
-  const sense = /minimize/i.test(t)? 'min' : 'max';
+  let sense = /minimize/i.test(t)? 'min' : 'max';
   const objSec = t.match(/(?:maximize|minimize)\s*(.*?)\s*subject\s*to/is)
-               || t.match(/(?:maximize|minimize)\s*(.*?)\s*(?:bounds|binary|general|end)/is);
+               || t.match(/(?:maximize|minimize)\s*(.?)\s(?:bounds|binary|general|end)/is);
   const Vset = new Set(); const c = {};
   if(objSec){
-    const expr = objSec[1];
-    let m; while((m=TERM_RE.exec(expr))!==null){
-      const coefStr = m[1].replace(/\s+/g,'');
-      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : Number(coefStr.replace(',','.'));
-      const v = m[2]; c[v]=(c[v]||0)+coef; Vset.add(v);
-    }
+    const expr = objSec[1].replace(/\s+/g,' ');
+    const terms = expr.match(/[+\-]?\s*\d*(?:\.\d+)?\s*\?\s[a-zA-Z]\w*/g)||[];
+    terms.forEach(tok=>{
+      const m = tok.match(/([+\-]?\s*\d*(?:\.\d+)?)\s*\?\s([a-zA-Z]\w*)/);
+      if(m){ const coef = m[1].trim()===''||m[1]==='+'?1 : m[1]==='-'?-1: Number(m[1]); c[m[2]]=(c[m[2]]||0)+coef; Vset.add(m[2]); }
+    });
   }
+  // restricciones
   const st = t.split(/subject\s*to/i)[1] || '';
   const tail = st.split(/bounds|binary|general|end/i)[0] || '';
   const lines = tail.split(/\n|;/).map(s=>s.trim()).filter(Boolean);
   const cons=[]; lines.forEach(ln=>{
-    const m = ln.match(/(.+?)\s*(<=|>=|=)\s*([+\-]?\d+(?:[.,]\d+)?)/i);
+    const m = ln.match(/(.+?)\s*(<=|>=|=)\s*([+\-]?\d+(?:\.\d+)?)/i);
     if(!m) return;
-    const LHS=m[1], sgn=(m[2]==='=')?'==':m[2], rhs=normNum(m[3]);
-    const row={}; let mm;
-    while((mm=TERM_RE.exec(LHS))!==null){
-      const coefStr = mm[1].replace(/\s+/g,'');
-      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : normNum(coefStr);
-      const v=mm[2]; row[v]=(row[v]||0)+coef; Vset.add(v);
-    }
+    const LHS=m[1], sgn=m[2]==='='?'==':m[2], rhs=Number(m[3]);
+    const row={}; const terms = LHS.match(/[+\-]?\s*\d*(?:\.\d+)?\s*\?\s[a-zA-Z]\w*/g)||[];
+    terms.forEach(tok=>{ const mm=tok.match(/([+\-]?\s*\d*(?:\.\d+)?)\s*\?\s([a-zA-Z]\w*)/);
+      if(mm){ const v=mm[2], coef=mm[1].trim()===''||mm[1]==='+'?1:mm[1]==='-'?-1:Number(mm[1]); row[v]=(row[v]||0)+coef; Vset.add(v); }
+    });
     cons.push({row, sign: sgn, rhs});
   });
-  // Bounds
+  // bounds (básico)
   const boundsTxt = (t.split(/bounds/i)[1]||'').split(/binary|general|end/i)[0]||'';
   const bounds={};
   boundsTxt.split(/\n|;/).map(s=>s.trim()).filter(Boolean).forEach(ln=>{
-    let m = ln.match(/([+\-]?\d+(?:[.,]\d+)?)\s*<=\s*([a-zA-Z]\w*)\s*<=\s*([+\-]?\d+(?:[.,]\d+)?)/i);
-    if(m){ const v=m[2]; bounds[v]={lb:normNum(m[1]), ub:normNum(m[3])}; return; }
-    m = ln.match(/([a-zA-Z]\w*)\s*>=\s*([+\-]?\d+(?:[.,]\d+)?)/i);
-    if(m){ const v=m[1]; bounds[v]={...(bounds[v]||{}), lb:normNum(m[2])}; return; }
-    m = ln.match(/([a-zA-Z]\w*)\s*<=\s*([+\-]?\d+(?:[.,]\d+)?)/i);
-    if(m){ const v=m[1]; bounds[v]={...(bounds[v]||{}), ub:normNum(m[2])}; return; }
+    // 0 <= x <= 5  |  x >= 0  |  x free
+    let m = ln.match(/([+\-]?\d+(?:\.\d+)?)\s*<=\s*([a-zA-Z]\w*)\s*<=\s*([+\-]?\d+(?:\.\d+)?)/i);
+    if(m){ const v=m[2]; bounds[v]={lb:Number(m[1]), ub:Number(m[3])}; return; }
+    m = ln.match(/([a-zA-Z]\w*)\s*>=\s*([+\-]?\d+(?:\.\d+)?)/i);
+    if(m){ const v=m[1]; bounds[v]={...(bounds[v]||{}), lb:Number(m[2])}; return; }
+    m = ln.match(/([a-zA-Z]\w*)\s*<=\s*([+\-]?\d+(?:\.\d+)?)/i);
+    if(m){ const v=m[1]; bounds[v]={...(bounds[v]||{}), ub:Number(m[2])}; return; }
     m = ln.match(/([a-zA-Z]\w*)\s+free/i);
     if(m){ const v=m[1]; bounds[v]={lb:-Infinity, ub:Infinity}; return; }
   });
@@ -328,6 +335,7 @@ function parseLP(raw){
   return {sense, V, cvec, A, bounds};
 }
 
+// Parser MPS (free-form básico)
 function parseMPS(raw){
   const t = raw.replace(/\r/g,'');
   const lines = t.split('\n');
@@ -347,8 +355,9 @@ function parseMPS(raw){
     const m = r.match(/^([NLG E])\s+(\S+)/i);
     if(m){ const t=m[1].trim().toUpperCase(), name=m[2]; rowType[name]=t; rowIdx[name]=Object.keys(rowIdx).length; if(t==='N') objRow=name; }
   });
-  const Vset = new Set(), Amap={};
+  const Vset = new Set(), Amap={}; // Amap[row][col]=coef
   cols.forEach(c=>{
+    // col row val [row val]
     const m = c.trim().split(/\s+/);
     if(m.length>=3){
       const col = m[0], r1=m[1], v1=parseFloat(m[2]);
@@ -370,6 +379,7 @@ function parseMPS(raw){
     const row=Amap[r]||{};
     cons.push({row, sign, rhs: RHS[r]||0});
   });
+  // objetivo
   const c={};
   const obj = Amap[objRow]||{};
   Object.keys(obj).forEach(v=> c[v]=(c[v]||0)+obj[v]);
@@ -391,43 +401,54 @@ function parseUniversal(texto){
 }
 
 /* ===========================
-   4) Simplex Fase I/II (LP)
+   4) Solver Simplex (Fase I/II) + Duales/Reducidos (LP)
    =========================== */
 function simplexSolve(model){
+  // model: {sense, V, cvec, A[{rowArr, sign, rhs}], bounds{v:{lb,ub}}}
+  // Convertir a estándar con holguras/excesos y artificiales
   const n = model.V.length, m = model.A.length;
-  const isMax = model.sense==='max';
   const c = model.cvec.slice();
+  const isMax = model.sense==='max';
   const toMinC = isMax ? c.map(x=> -x) : c.slice();
 
-  // Construcción de tableau con slack/exceso/artificial
-  let rows=[], basis=[];
+  // construir tableau
+  // Filas de restricciones → <= con holgura; >= y == con artificial
+  let rows=[]; let basis=[];
+  let artCols=0;
   for(let i=0;i<m;i++){
     const {rowArr, sign, rhs} = model.A[i];
-    const base = new Array(n).fill(0).map((_,j)=> rowArr[j]||0);
+    let row = new Array(n).fill(0).map((_,j)=> rowArr[j]||0);
+    // Slack/Exceso
     const slack = new Array(m).fill(0);
     const art = new Array(m).fill(0);
     if(sign==='<='){ slack[i]=1; }
-    else if(sign==='>='){ slack[i]=-1; art[i]=1; }
-    else if(sign==='=='){ art[i]=1; }
-    rows.push([...base, ...slack, ...art, rhs]);
-    if(sign==='<=') basis.push(n+i); else basis.push(n+m+i);
+    else if(sign==='>='){ slack[i]=-1; art[i]=1; artCols++; }
+    else if(sign==='=='){ art[i]=1; artCols++; }
+    // ensamblar: [x..., slack m..., art m..., RHS]
+    row = [...row, ...slack, ...art, rhs];
+    rows.push(row);
+    // base inicial
+    if(sign==='<=') basis.push(n+i); else basis.push(n+m+i); // slack o artificial
   }
-  const totalCols = n + m + m;
-  let T = rows.map(r=>{ const row = new Array(totalCols+1).fill(0); for(let j=0;j<r.length;j++) row[j]=r[j]; return row; });
-
-  // Fase I: minimizar suma de artificiales
+  const totalCols = n + m + m; // x + slack + art
+  // Fase I
+  let T = rows.map(r=>{
+    const row = new Array(totalCols+1).fill(0);
+    for(let j=0;j<r.length;j++) row[j]=r[j];
+    return row;
+  });
   let obj1 = new Array(totalCols+1).fill(0);
   for(let i=0;i<m;i++){
-    if(basis[i]===n+m+i){
+    if(basis[i]===n+m+i){ // artificial en base
       for(let j=0;j<=totalCols;j++) obj1[j] += T[i][j];
     }
   }
-  obj1 = obj1.map(v=> -v);
+  obj1 = obj1.map(v=> -v); // minimizar
   T.unshift(obj1);
   simplexCore(T, basis);
   if(Math.abs(T[0][totalCols])>1e-8) return {error:'Infactible (Fase I > 0).'};
-
-  // Fase II: objetivo real
+  // preparar Fase II
+  // quitar contribución artificial del objetivo original
   const obj2 = new Array(totalCols+1).fill(0);
   for(let j=0;j<n;j++) obj2[j] = toMinC[j]||0;
   T[0] = obj2;
@@ -440,7 +461,7 @@ function simplexSolve(model){
   }
   simplexCore(T, basis);
 
-  // Solución
+  // extraer solución
   const sol = new Array(n).fill(0);
   const RHS = totalCols;
   for(let i=1;i<T.length;i++){
@@ -449,18 +470,29 @@ function simplexSolve(model){
   }
   const Z = isMax ? -T[0][RHS] : T[0][RHS];
 
-  // Slacks
+  // slacks/excesos
   const slackVals = new Array(m).fill(0);
   for(let i=1;i<T.length;i++){
     const bj = basis[i-1];
     if(bj>=n && bj<n+m) slackVals[bj-n] = T[i][RHS];
   }
 
-  // Duales y costos reducidos (si B invertible)
+  // Precios duales y costos reducidos (válidos para LP)
+  // y^T = c_B^T B^{-1}. Reconstruimos B de columnas básicas.
+  const B = [];
+  const cB = [];
+  for(let i=0;i<m;i++){
+    const bj = basis[i];
+    const col = [];
+    for(let r=1; r<T.length; r++) col.push(T[r][bj]);
+    B.push(col);
+    cB.push( (bj<n)? toMinC[bj] : 0 ); // contribución original para x; slack tiene costo 0
+  }
+  // Invertir B
   function inv(mat){
     const n=mat.length;
     const A=mat.map(r=>r.slice());
-    const I=Array.from({length:n},(_,i)=> Array.from({length:n},(__,j)=> i===j?1:0));
+    const I=Array.from({length:n},(,i)=> Array.from({length:n},(_,j)=> i===j?1:0));
     for(let i=0;i<n;i++){
       let piv=i;
       for(let r=i;r<n;r++) if(Math.abs(A[r][i])>Math.abs(A[piv][i])) piv=r;
@@ -475,45 +507,45 @@ function simplexSolve(model){
     }
     return I;
   }
-  let yT=null, reduced=null;
+  let yT = null, reduced = null;
   try{
-    // Construir B y cB
-    const mRows = T.length-1;
-    const B = Array.from({length:mRows}, ()=> Array(mRows).fill(0));
-    const cB = Array(mRows).fill(0);
-    for(let i=1;i<T.length;i++){
-      const bj = basis[i-1];
-      for(let r=1;r<T.length;r++) B[i-1][r-1]=T[r][bj];
-      cB[i-1] = (bj<n)? toMinC[bj] : 0;
-    }
     const Binv = inv(B);
-    yT = new Array(mRows).fill(0);
-    for(let j=0;j<mRows;j++){
-      for(let k=0;k<mRows;k++) yT[j] += cB[k]*Binv[k][j];
+    // y^T = c_B^T B^{-1}
+    yT = new Array(m).fill(0);
+    for(let j=0;j<m;j++){
+      for(let k=0;k<m;k++) yT[j] += cB[k]*Binv[k][j];
     }
+    // costos reducidos r_j = c_j - y^T * A_j  (en el espacio “a la Fase II” original)
     reduced = new Array(n).fill(0);
     for(let j=0;j<n;j++){
+      // construir columna A_j desde restricciones originales (sin slacks/art)
       const Aj = model.A.map(con=> con.rowArr[j]||0);
-      let yTA=0; for(let k=0;k<mRows;k++) yTA += yT[k]*Aj[k];
-      reduced[j] = (isMax ? c[j] : toMinC[j]) - (isMax ? yTA : -yTA);
+      let yTA=0; for(let k=0;k<m;k++) yTA += yT[k]*Aj[k];
+      reduced[j] = toMinC[j] - yTA;  // si sense=max, recuerda que toMinC = -c
+      if(isMax) reduced[j] = -reduced[j]; // reportar en convención del usuario
     }
-    if(isMax){ yT = yT.map(v=> -v); } // sombra para <= en max
-  }catch(_e){}
+    // precios duales, reportados en convención del usuario: si es max, y corresponde a dual de <=
+    if(isMax){ yT = yT.map(v=> -v); } // para presentar sombra intuitiva (incremento en RHS)
+  }catch(_e){
+    // si B no invertible por degeneración, omitimos duales
+  }
 
   return {optimalValue: Z, x: sol, slack: slackVals, dual: yT, reduced, basis, tableau:T, isMax};
 }
 
+// núcleo pivoteo (regla de Bland para evitar ciclos)
 function simplexCore(T, basis){
   const rows = T.length, cols=T[0].length, RHS=cols-1;
   let iter=0;
   while(iter++<2000){
-    // Columna pivote (regla de Bland)
-    let pc=-1;
+    // elegir columna pivote: coef más negativo en Z (evitar ties con Bland)
+    let pc=-1, min=0;
     for(let j=0;j<RHS;j++){
-      if(T[0][j] < -1e-12){ pc=j; break; }
+      const v=T[0][j];
+      if(v<min - 1e-12){ min=v; pc=j; break; } // Bland: el primero que cumpla
     }
     if(pc===-1) break; // óptimo
-    // Fila pivote (mínima razón)
+    // fila pivote: mínima razón positiva
     let pr=-1, best=Infinity;
     for(let i=1;i<rows;i++){
       const a=T[i][pc];
@@ -536,166 +568,92 @@ function simplexCore(T, basis){
 }
 
 /* ===========================
-   5) Render interpretación y resultados + gráficos
+   5) Render de interpretación y resultados + gráficos
    =========================== */
 function renderInterpretacion(model){
   let h = '';
-  h += `<div><b>${model.sense==='min'?'Minimización':'Maximización'}</b> — Objetivo con ${model.V.length} variable(s)</div>`;
-  h += `<div class="pill">Variables: ${model.V.join(', ') || '—'}</div>`;
-  if(model.cvec?.length){
-    const obj = model.V.map((v,i)=> (model.cvec[i]!==0)? `${fmt(model.cvec[i])}${v}`:'' ).filter(Boolean).join(' + ') || '0';
-    h += `<div class="muted" style="margin-top:6px">Z = ${obj}</div>`;
-  }
+  h += <div><b>${model.sense==='min'?'Minimización':'Maximización'}</b> — Objetivo con ${model.V.length} variable(s)</div>;
+  h += <div class="pill">Variables: ${model.V.join(', ')}</div>;
   if(model.A.length){
-    h += `<table><tr><th>#</th><th>Restricción</th></tr>`;
+    h += <table><tr><th>#</th><th>Restricción</th></tr>;
     model.A.forEach((r,i)=>{
-      const expr = model.V.map((v,j)=> r.rowArr[j]? `${fmt(r.rowArr[j])}${v}`:'' ).filter(Boolean).join(' + ') || '0';
-      h += `<tr><td>${i+1}</td><td>${expr} ${r.sign.replace('==','=')} ${fmt(r.rhs)}</td></tr>`;
+      const expr = model.V.map((v,j)=> r.rowArr[j]? ${fmt(r.rowArr[j])}${v}:'' ).filter(Boolean).join(' + ');
+      h += <tr><td>${i+1}</td><td>${expr} ${r.sign.replace('==','=')} ${fmt(r.rhs)}</td></tr>;
     });
-    h += `</table>`;
+    h += </table>;
   } else {
-    h += `<div class="warn">No se detectaron restricciones.</div>`;
+    h += <div class="warn">No se detectaron restricciones.</div>;
   }
   byId('interpretacion').innerHTML = h;
 }
+function fmt(n){ return (Math.abs(n)%1>1e-9)? Number(n).toFixed(6) : Number(n).toString(); }
 
 function renderResultados(model, sol){
-  if(sol.error){ byId('resultados').innerHTML = `<div class="err">${sol.error}</div>`; return; }
-  let h = `<div class="ok">Valor ${model.sense==='min'?'mínimo':'máximo'}: <b>${fmt(sol.optimalValue)}</b></div>`;
-
-  h += `<h4>Variables</h4><table><tr><th>Variable</th><th>Valor</th><th>Costo reducido (LP)</th></tr>`;
+  if(sol.error){ byId('resultados').innerHTML = <div class="err">${sol.error}</div>; return; }
+  let h = <div class="ok">✅ ${model.sense==='min'?'Valor mínimo':'Valor máximo'}: <b>${fmt(sol.optimalValue)}</b></div>;
+  h += <h4>Variables</h4><table><tr><th>Variable</th><th>Valor</th><th>Costo reducido (LP)</th></tr>;
   model.V.forEach((v,i)=>{
-    h += `<tr><td>${v}</td><td>${fmt(sol.x[i]||0)}</td><td>${sol.reduced!=null? fmt(sol.reduced[i]||0) : '—'}</td></tr>`;
+    h += <tr><td>${v}</td><td>${fmt(sol.x[i]||0)}</td><td>${sol.reduced? fmt(sol.reduced[i]): '-'}</td></tr>;
   });
-  h += `</table>`;
-
-  h += `<h4>Restricciones</h4><table><tr><th>#</th><th>Tipo</th><th>RHS</th><th>Slack</th><th>Vinculante</th><th>Precio dual (LP)</th></tr>`;
+  h += </table>;
+  h += <h4>Restricciones</h4><table><tr><th>#</th><th>Tipo</th><th>RHS</th><th>Slack</th><th>Vinculante</th><th>Precio dual (LP)</th></tr>;
   model.A.forEach((r,i)=>{
     const slack = sol.slack? sol.slack[i]||0 : 0;
-    const bind = (r.sign==='<=') ? Math.abs(slack) < 1e-7 : (r.sign==='==') ? true : '—';
-    h += `<tr><td>${i+1}</td><td>${r.sign.replace('==','=')}</td><td>${fmt(r.rhs)}</td><td>${fmt(slack)}</td><td>${bind===true?'Sí':(bind==='—'?'—':'No')}</td><td>${sol.dual? fmt(sol.dual[i]||0): '—'}</td></tr>`;
+    const bind = (r.sign==='<=') ? Math.abs(slack) < 1e-7 : '—';
+    h += <tr><td>${i+1}</td><td>${r.sign.replace('==','=')}</td><td>${fmt(r.rhs)}</td><td>${fmt(slack)}</td><td>${bind===true?'Sí':(bind==='—'?'—':'No')}</td><td>${sol.dual? fmt(sol.dual[i]||0): '-'}</td></tr>;
   });
-  h += `</table>`;
+  h += </table>;
+
+  // Gráfica si hay 2 variables
+  const chartsId = 'graph-2d';
+  if(model.V.length===2){
+    h += <h4>Región factible (2D)</h4><div id="${chartsId}" class="graph"></div>;
+  }
+  byId('resultados').innerHTML = h;
 
   if(model.V.length===2){
-    const chartsId = 'graph-2d';
-    h += `<h4>Región factible (2D)</h4><div id="${chartsId}" class="graph"></div>`;
-    byId('resultados').innerHTML = h;
     graficar2D(model, sol, chartsId);
-  } else {
-    byId('resultados').innerHTML = h;
   }
 }
 
-/* ========= Gráfica 2D: región, líneas, vértices, óptimo y recta objetivo ========= */
 function graficar2D(model, sol, id){
   const ec = echarts.init(byId(id));
   const verts = calcularVertices(model);
-  const poly = verts.map(p=>[p[0],p[1]]);
+  const data = verts.map(p=>[p[0],p[1]]);
   const opt = [sol.x[0]||0, sol.x[1]||0];
-
-  // Líneas de restricción (solo 2D válidas)
-  const lines = model.A.map(r=>{
-    const a = r.rowArr[0]||0, b = r.rowArr[1]||0, c = r.rhs;
-    // y = (c - a x)/b  o  x = c/a si b=0
-    return {a,b,c,sign:r.sign};
-  });
-
-  const maxX = Math.max(1, ...poly.map(p=>p[0]), opt[0]) * 1.2;
-  const maxY = Math.max(1, ...poly.map(p=>p[1]), opt[1]) * 1.2;
-
-  // Recta objetivo a nivel óptimo: c1 x + c2 y = Z*
-  const c1 = model.cvec[0]||0, c2=model.cvec[1]||0, Z = sol.optimalValue;
-  let objLine = [];
-  if(Math.abs(c2)>1e-12){
-    objLine = [[0, Z/c2], [maxX, (Z - c1*maxX)/c2]];
-  }else if(Math.abs(c1)>1e-12){
-    const x = Z/c1; objLine = [[x, 0], [x, maxY]];
-  }
-
-  const series = [];
-  if(poly.length>=3){
-    series.push({
-      name:'Región factible',
-      type:'line',
-      data:[...poly, poly[0]],
-      areaStyle:{},
-      lineStyle:{width:1},
-      symbol:'none',
-      emphasis:{disabled:true}
-    });
-    series.push({ name:'Vértices', type:'scatter', data:poly, symbolSize:8 });
-  }else{
-    series.push({ name:'Región factible', type:'scatter', data:poly, symbolSize:8 });
-  }
-
-  // Líneas de restricción
-  lines.forEach((L,idx)=>{
-    let pts=[];
-    if(Math.abs(L.b)>1e-12){
-      const y0 = L.c/L.b;
-      const yX = (L.c - L.a*maxX)/L.b;
-      pts = [[0,y0],[maxX,yX]];
-    }else if(Math.abs(L.a)>1e-12){
-      const x = L.c/L.a;
-      pts = [[x,0],[x,maxY]];
-    }
-    series.push({
-      name:`R${idx+1}: ${fmt(L.a)}x + ${fmt(L.b)}y ${L.sign.replace('==','=')} ${fmt(L.c)}`,
-      type:'line',
-      data:pts,
-      showSymbol:false,
-      lineStyle:{type:'dashed', width:1}
-    });
-  });
-
-  // Punto óptimo
-  series.push({ name:'Óptimo', type:'scatter', data:[opt], symbolSize:14 });
-
-  // Recta objetivo al nivel óptimo
-  if(objLine.length){
-    series.push({
-      name:'Recta objetivo (Z*)',
-      type:'line',
-      data:objLine,
-      showSymbol:false,
-      lineStyle:{width:2}
-    });
-  }
-
+  const maxX = Math.max(1, ...data.map(p=>p[0]), opt[0])*1.15;
+  const maxY = Math.max(1, ...data.map(p=>p[1]), opt[1])*1.15;
   const option = {
-    tooltip:{trigger:'item'},
-    legend:{type:'scroll'},
+    tooltip:{},
     xAxis:{type:'value', name:model.V[0], min:0, max:maxX},
     yAxis:{type:'value', name:model.V[1], min:0, max:maxY},
-    series
+    series:[
+      {name:'Región', type:'line', areaStyle:{}, data:[...data, data[0]||[0,0]], lineStyle:{width:0}},
+      {name:'Vértices', type:'scatter', data:data},
+      {name:'Óptimo', type:'scatter', data:[opt], symbolSize:14}
+    ]
   };
   ec.setOption(option);
 }
 
-/* ======= Vértices de la región factible (intersecciones + filtrado) ======= */
 function calcularVertices(model){
-  const rs = model.A.map(r=>({a:r.rowArr[0]||0, b:r.rowArr[1]||0, c:r.rhs, sign:r.sign}));
-  // Añade x>=0, y>=0 si no están explícitas (para el grafo)
-  rs.push({a:1,b:0,c:Infinity,sign:'<='}); // x <= +∞ (solo para intersecciones con ejes)
-  rs.push({a:0,b:1,c:Infinity,sign:'<='}); // y <= +∞
+  const rs = model.A.filter(r=> r.rowArr.length>=2);
   const verts=[];
-  // Cortes con ejes de cada restricción (<= típicas)
-  model.A.forEach(r=>{
-    const a=r.rowArr[0]||0, b=r.rowArr[1]||0, c=r.rhs;
+  // ejes
+  rs.forEach(r=>{
+    const [a,b]=r.rowArr, c=r.rhs;
     if(Math.abs(b)>1e-12){ const y=c/b; if(y>=0) verts.push([0,y]); }
     if(Math.abs(a)>1e-12){ const x=c/a; if(x>=0) verts.push([x,0]); }
   });
-  // Intersecciones par a par
+  // pares
   for(let i=0;i<rs.length;i++) for(let j=i+1;j<rs.length;j++){
-    const {a:a1,b:b1,c:c1}=rs[i], {a:a2,b:b2,c:c2}=rs[j];
+    const [a1,b1]=rs[i].rowArr, [a2,b2]=rs[j].rowArr; const c1=rs[i].rhs, c2=rs[j].rhs;
     const det=a1*b2-a2*b1; if(Math.abs(det)<1e-12) continue;
-    const x=(b2*c1-b1*c2)/det; const y=(a1*c2-a2*c1)/det;
-    const p=[x,y];
-    if(Number.isFinite(x)&&Number.isFinite(y)&&x>=-1e-9&&y>=-1e-9 && esFactible2D(p, model)) verts.push([Math.max(0,x),Math.max(0,y)]);
+    const x=(b2*c1-b1*c2)/det; const y=(a1*c2-a2*c1)/det; const p=[x,y];
+    if(x>=-1e-9 && y>=-1e-9 && esFactible2D(p, model)) verts.push([Math.max(0,x),Math.max(0,y)]);
   }
   if(!verts.length) return [[0,0]];
-  // Ordenar CCW + de-duplicar
+  // ordenar y de-duplicar
   const cx=verts.reduce((s,p)=>s+p[0],0)/verts.length, cy=verts.reduce((s,p)=>s+p[1],0)/verts.length;
   verts.sort((A,B)=> Math.atan2(A[1]-cy,A[0]-cx)-Math.atan2(B[1]-cy,B[0]-cx));
   const uniq=[]; const eps=1e-6;
@@ -724,61 +682,56 @@ byId('btn-analizar').addEventListener('click', ()=>{
   byId('resultados').innerHTML = '<div class="loading"></div> Resolviendo…';
   setTimeout(()=>{
     try{
+      // separar múltiples problemas por cabeceras o separadores
       const bloques = raw.split(/\n\s*(?:---+|Problema\s*\d+|Problem\s*\d+|Ejercicio|Exercise|#\s+\S+)/i).map(s=>s.trim()).filter(Boolean);
-      byId('interpretacion').innerHTML='';
-      byId('resultados').innerHTML='';
+      let inter='', res='';
       bloques.forEach((bloque, idx)=>{
         const model = parseUniversal(bloque);
-        // Por defecto MAX si no se dijo lo contrario
-        if(!/min(?:imizar|imize)/i.test(bloque)) model.sense='max';
         renderInterpretacion(model);
         const sol = simplexSolve(model);
         renderResultados(model, sol);
-        if(idx<bloques.length-1) log('— Bloque resuelto —');
+        if(idx<bloques.length-1) log('— Listo un bloque —');
       });
     }catch(err){
-      byId('resultados').innerHTML = `<div class="err">Error: ${err.message}</div>`;
+      byId('resultados').innerHTML = <div class="err">Error: ${err.message}</div>;
       console.error(err);
     }
-  }, 30);
+  }, 50);
 });
 
 /* ===========================
-   7) Pruebas automáticas
+   7) Pruebas automáticas (NO tocan tus casos)
    =========================== */
 byId('btn-tests').addEventListener('click', ()=>{
   const tests = [
-    { name:'LP 2D clásico (Max)', txt:`Z = 80x + 50y; 4x + 3y ≤ 240; 2x + y ≤ 100; x,y ≥ 0`, sense:'max' },
-    { name:'LP estilo .lp', txt:`Maximize
-  obj: 3 U + 5 H
-Subject To
-  inv: 25 U + 50 H <= 80000
-  riesgo: 0.5 U + 0.25 H <= 700
-Bounds
-  U >= 0
-  H >= 0
-End`, sense:'max' },
-    { name:'MPS básico (min por convención)', txt:`NAME TEST
-ROWS
- N OBJ
- L R1
- L R2
-COLUMNS
- X R1 4 R2 2
- Y R1 3 R2 1
-RHS
- RHS1 R1 240 R2 100
-ENDATA` }
+    {
+      name:'LP 2D clásico (Max)',
+      txt:Z = 80x + 50y; 4x + 3y ≤ 240; 2x + y ≤ 100; x,y ≥ 0,
+      expectSense:'max'
+    },
+    {
+      name:'Forma que indicaste (≥ incluido)',
+      txt:Z = a x + b y; c x + d y ≤ e; f x + g y ≥ h; x,y ≥ 0.replace(/a/g,'80').replace(/b/g,'50').replace(/c/g,'4').replace(/d/g,'3').replace(/e/g,'240').replace(/f/g,'2').replace(/g/g,'1').replace(/h/g,'0'),
+      expectSense:'max'
+    },
+    {
+      name:'LP estilo .lp minimal',
+      txt:Maximize\n  obj: 3 U + 5 H\nSubject To\n  inv: 25 U + 50 H <= 80000\n  risco: 0.5 U + 0.25 H <= 700\n  capU: U <= 1000\nBounds\n  U >= 0\n  H >= 0\nEnd
+    },
+    {
+      name:'MPS free-form básico (min por convención MPS)',
+      txt:NAME TEST\nROWS\n N OBJ\n L R1\n L R2\nCOLUMNS\n X R1 4 R2 2\n Y R1 3 R2 1\nRHS\n RHS1 R1 240 R2 100\nENDATA
+    }
   ];
   logArea.textContent='';
   tests.forEach(t=>{
     try{
       const model = parseUniversal(t.txt);
-      if(t.sense) model.sense=t.sense;
+      if(t.expectSense && model.sense!==t.expectSense) throw new Error(sense esperado ${t.expectSense}, obtenido ${model.sense});
       const sol = simplexSolve(model);
-      log(`✔ ${t.name}: OK (Z=${sol.optimalValue?.toFixed?.(4)})`);
+      log(✔ ${t.name}: OK (Z=${sol.optimalValue?.toFixed?.(4)}));
     }catch(e){
-      log(`✖ ${t.name}: ${e.message}`);
+      log(✖ ${t.name}: ${e.message});
     }
   });
 });

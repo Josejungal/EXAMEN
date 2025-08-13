@@ -1,252 +1,787 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <title>Método Simplex Mejorado</title>
+  <meta charset="UTF-8" />
+  <title>Solver LP — Texto/Archivo/Imagen (PDF+OCR) • Simplex + Duales</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Libs frontend -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.1/math.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <!-- OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+  <!-- pdf.js (sin worker) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Lectores -->
+  <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <style>
-    body { font-family: Arial; padding: 20px; background: #f0f0f0; }
-    input, textarea, select, button { width: 100%; padding: 10px; margin: 10px 0; }
-    canvas { background: white; margin-top: 20px; }
-    #resultado { background: #fff; padding: 15px; border: 1px solid #ccc; }
+    :root{--bg:#f7f8fb;--fg:#222;--card:#fff;--pri:#4e73df;--pri-d:#2e59d9;--muted:#667085}
+    *{box-sizing:border-box}
+    body{margin:0;padding:24px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:var(--fg)}
+    h2,h3{color:var(--pri);margin:0 0 8px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:1000px){.grid{grid-template-columns:1fr}}
+    .card{background:var(--card);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.06);padding:16px}
+    textarea{width:100%;min-height:180px;border:1px solid #e5e7eb;border-radius:10px;padding:12px}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .btn{appearance:none;border:none;border-radius:10px;background:var(--pri);color:#fff;font-weight:600;padding:10px 14px;cursor:pointer}
+    .btn:hover{background:var(--pri-d)}
+    .btn.secondary{background:#858796}.btn.secondary:hover{background:#6c757d}
+    .pill{background:#eef2ff;color:#1e293b;padding:6px 10px;border-radius:999px;font-size:12px}
+    .drop{border:2px dashed #cbd5e1;border-radius:12px;padding:16px;text-align:center;background:#fafafa;color:#475569}
+    .drop.drag{background:#eef2ff;border-color:var(--pri)}
+    .muted{color:var(--muted)}
+    .loading{border:4px solid #f3f3f3;border-top:4px solid #3498db;border-radius:50%;width:26px;height:26px;animation:spin 1s linear infinite;margin:10px auto}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+    th,td{border:1px solid #e5e7eb;padding:6px 8px;text-align:center}
+    th{background:#f8fafc}
+    .ok{background:#e8f5e9;color:#1b5e20;padding:10px;border-radius:10px;margin:10px 0}
+    .warn{background:#fff8e1;color:#8d6e00;padding:10px;border-radius:10px;margin:10px 0}
+    .err{background:#fdecea;color:#b71c1c;padding:10px;border-radius:10px;margin:10px 0}
+    details{margin-top:8px}
+    .graph{width:100%;height:440px}
   </style>
 </head>
 <body>
+  <h2>Solver LP — Carga de Archivos, PDF, Imágenes (OCR) y Texto</h2>
+  <p class="muted">Resuelve Programación Lineal (LP) a partir de texto, .lp, .mps, PDF o imagen. Sin workers externos (PDF en modo seguro, OCR integrado).</p>
 
-  <h2>📈 Método Simplex (Con símbolos extendidos)</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>1) Cargar archivo o pegar enunciado</h3>
+      <div id="drop" class="drop">Arrastra archivos aquí o
+        <label style="text-decoration:underline;cursor:pointer;color:#2563eb">
+          <input id="file" type="file" multiple style="display:none"
+                 accept=".txt,.lp,.mps,.csv,.xlsx,.xls,.json,.md,.html,.pdf,.png,.jpg,.jpeg,.webp,.docx" />
+          selecciónalos
+        </label>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="pill">Formatos: txt, lp, mps, pdf, png/jpg, docx, xlsx/csv, json, md, html</span>
+        <button class="btn secondary" id="limpiar">Limpiar</button>
+      </div>
+      <h3 style="margin-top:12px">o pega el enunciado</h3>
+      <textarea id="entrada" placeholder="Ej.: Max Z = 80x + 50y; 4x + 3y ≤ 240; 2x + y ≤ 100; x,y ≥ 0"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btn-analizar">Analizar y resolver</button>
+        <button class="btn secondary" id="btn-tests">Pruebas automáticas</button>
+      </div>
+      <div id="archivos" class="muted" style="margin-top:6px;white-space:pre-wrap"></div>
+      <div id="log" class="muted" style="margin-top:6px;white-space:pre-wrap"></div>
+    </div>
 
-  <label>Tipo de Optimización:</label>
-  <select id="tipoOptimizacion">
-    <option value="max">Maximizar</option>
-    <option value="min">Minimizar</option>
-  </select>
+    <div class="card">
+      <h3>2) Interpretación</h3>
+      <div id="interpretacion" class="muted">Aquí verás el modelo detectado.</div>
+    </div>
+  </div>
 
-  <label>Método de Solución:</label>
-  <select id="metodoSolucion">
-    <option value="grafico">Gráfico</option>
-    <option value="simplex">Simplex</option>
-  </select>
+  <div class="card" style="margin-top:16px">
+    <h3>3) Resultados</h3>
+    <div id="resultados" class="muted">Aquí aparecerán soluciones, duales, slacks y gráficos.</div>
+  </div>
 
-  <label>Función Objetivo (Ej: Z = 40x + 70y):</label>
-  <input id="objetivo" placeholder="Z = 40x + 70y" value="Z = 40x + 70y">
+<script>
+/* ===========================
+   0) PDF.js modo seguro (sin worker)
+   =========================== */
+pdfjsLib.GlobalWorkerOptions.workerSrc = null;
+pdfjsLib.disableWorker = true;
 
-  <label>Restricciones (una por línea):</label>
-  <textarea id="restricciones" rows="6">x + 2y <= 50
-4x + 3y <= 120
-x >= 0
-y >= 0</textarea>
+/* ===========================
+   1) Utilidades de UI
+   =========================== */
+const $ = s => document.querySelector(s);
+const byId = id => document.getElementById(id);
+const logArea = byId('log');
+function log(msg){ logArea.textContent += (logArea.textContent? '\n':'') + msg; }
+function fmt(n){ if(n===Infinity) return '∞'; if(n===-Infinity) return '-∞'; const x=Number(n); return (Math.abs(x)%1>1e-9)? x.toFixed(6) : x.toString(); }
 
-  <button onclick="resolver()">Resolver y Graficar</button>
+/* ===========================
+   2) Carga de archivos (incluye OCR y PDF)
+   =========================== */
+const fileInput = byId('file');
+const drop = byId('drop');
+const entrada = byId('entrada');
+const archivos = byId('archivos');
 
-  <div id="resultado"></div>
-  <canvas id="grafica" width="900" height="600"></canvas>
+drop.addEventListener('click', ()=> fileInput.click());
+['dragenter','dragover'].forEach(evt => drop.addEventListener(evt, e=>{
+  e.preventDefault(); e.stopPropagation(); drop.classList.add('drag');
+}));
+['dragleave','drop'].forEach(evt => drop.addEventListener(evt, e=>{
+  e.preventDefault(); e.stopPropagation(); drop.classList.remove('drag');
+}));
+drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+byId('limpiar').addEventListener('click', ()=>{
+  entrada.value = ''; archivos.textContent=''; logArea.textContent='';
+  byId('interpretacion').textContent=''; byId('resultados').textContent='';
+});
 
-  <script>
-    let chart;
-
-    function parseExpresion(exp) {
-      exp = exp.replace(/\s/g, '').toLowerCase();
-      const coef = { x: 0, y: 0 };
-      const regex = /([+-]?\d*\.?\d*)\*?([xy])/g;
-      let match;
-      while ((match = regex.exec(exp)) !== null) {
-        let num = match[1];
-        if (num === "" || num === "+") num = 1;
-        else if (num === "-") num = -1;
-        coef[match[2]] += parseFloat(num);
-      }
-      return [coef.x, coef.y];
+async function handleFiles(fileList){
+  const files = Array.from(fileList||[]);
+  if(!files.length) return;
+  archivos.textContent = files.map(f=>`• ${f.name} (${(f.size/1024).toFixed(1)} KB)`).join('\n');
+  let bloques = [];
+  for(const file of files){
+    try{
+      const txt = await leerArchivo(file);
+      if(txt && txt.trim()) bloques.push(`\n---\n# ${file.name}\n\n${txt.trim()}`);
+    }catch(err){
+      log(`Error leyendo ${file.name}: ${err.message}`);
+      bloques.push(`\n---\n# ${file.name}\n\n[Error al leer: ${err.message}]`);
     }
+  }
+  entrada.value = (entrada.value + '\n' + bloques.join('\n')).trim();
+}
 
-    function normalizarSimbolos(str) {
-      return str.replace(/≤/g, "<=")
-                .replace(/≥/g, ">=")
-                .replace(/</g, "<")
-                .replace(/>/g, ">")
-                .replace(/=/g, "=");
+function asText(file){
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsText(file,'utf-8'); });
+}
+function asArrayBuffer(file){
+  return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsArrayBuffer(file); });
+}
+async function leerArchivo(file){
+  const ext = (file.name.split('.').pop()||'').toLowerCase();
+  if(['txt','md','html','json','csv','lp','mps'].includes(ext)){
+    const raw = await asText(file);
+    if(ext==='json'){ try{ return extraerDeJSON(JSON.parse(raw)); }catch{return raw;} }
+    if(ext==='csv'){ const p = Papa.parse(raw, {skipEmptyLines:true}); return p.data.map(r=>r.join('\t')).join('\n'); }
+    return raw;
+  }
+  if(ext==='docx'){
+    const buf = await asArrayBuffer(file);
+    const { value } = await mammoth.extractRawText({arrayBuffer:buf});
+    return value;
+  }
+  if(ext==='xlsx' || ext==='xls'){
+    const buf = await asArrayBuffer(file);
+    const wb = XLSX.read(buf, {type:'array'});
+    let out=[];
+    wb.SheetNames.forEach(n=>{
+      const sh = wb.Sheets[n];
+      out.push(`## Hoja: ${n}\n${XLSX.utils.sheet_to_csv(sh)}`);
+    });
+    return out.join('\n');
+  }
+  if(ext==='pdf'){
+    const buf = await asArrayBuffer(file);
+    return await extraerTextoPDF(buf);
+  }
+  if(['png','jpg','jpeg','webp'].includes(ext)){
+    const url = URL.createObjectURL(file);
+    return await ocrImagen(url);
+  }
+  return asText(file);
+}
+function extraerDeJSON(obj){
+  if(typeof obj==='string') return obj;
+  if(Array.isArray(obj)) return obj.map(extraerDeJSON).join('\n');
+  if(obj && typeof obj==='object') return Object.entries(obj).map(([k,v])=>`# ${k}\n${extraerDeJSON(v)}`).join('\n');
+  return String(obj);
+}
+async function extraerTextoPDF(arrayBuffer){
+  try{
+    const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+    let full=''; 
+    for(let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      full += '\n' + content.items.map(it=>it.str).join(' ');
     }
+    return full;
+  }catch(err){
+    log('PDF error (modo sin worker): '+err.message);
+    throw err;
+  }
+}
+async function ocrImagen(objectURL){
+  try{
+    const { data:{ text } } = await Tesseract.recognize(objectURL, 'spa+eng', { logger: ()=>{} });
+    return text || '';
+  }catch(err){
+    log('OCR error: '+err.message);
+    throw err;
+  }
+}
 
-    function interseccion(r1, r2) {
-      const [a1, b1] = r1.coefs;
-      const [a2, b2] = r2.coefs;
-      const c1 = r1.rhs;
-      const c2 = r2.rhs;
-      const det = a1 * b2 - a2 * b1;
-      if (det === 0) return null;
-      const x = (c1 * b2 - c2 * b1) / det;
-      const y = (a1 * c2 - a2 * c1) / det;
-      return [x, y];
+/* ===========================
+   3) Parseo universal (texto libre / .lp / .mps)
+   =========================== */
+function normNum(str){
+  const s = String(str).trim();
+  if(/[.,]/.test(s)){
+    const last = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
+    const head = s.slice(0,last).replace(/[.,]/g,'');
+    const dec = s.slice(last+1);
+    if(last>0) return Number(`${head}.${dec}`);
+  }
+  return Number(s.replace(/,/g,''));
+}
+// Detecta términos como "3x", "-x2", "+ 1.5 y"
+const TERM_RE = /([+\-]?\s*\d*(?:[.,]\d+)?)\s*([a-zA-Z]\w*)/g;
+
+function parseTextoLibre(texto){
+  const t = texto.replace(/[—–]/g,'-').replace(/≤/g,'<=').replace(/≥/g,'>=');
+  const lines = t.split(/\n|;/).map(s=>s.trim()).filter(Boolean);
+
+  // Sentido (por defecto: MAX)
+  let sense = /min(?:imizar|imize)?/i.test(t)? 'min' : 'max';
+
+  // Objetivo
+  let c = {}, vars = new Set();
+  let objMatch = t.match(/(?:^|\b)(?:max(?:imizar)?|min(?:imizar)?|z|obj(?:etivo)?|objective)\s*[:=]?\s*([^;\n]+)/i);
+  if(objMatch){
+    const expr = objMatch[1];
+    let m;
+    while((m = TERM_RE.exec(expr))!==null){
+      const coefStr = m[1].replace(/\s+/g,'');
+      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : normNum(coefStr);
+      const v = m[2];
+      c[v] = (c[v]||0) + coef;
+      vars.add(v);
     }
+  }
 
-    function esFactible([x, y], restricciones) {
-      for (const r of restricciones) {
-        const val = r.coefs[0] * x + r.coefs[1] * y;
-        if (r.tipo === "<=" && val > r.rhs + 0.001) return false;
-        if (r.tipo === ">=" && val < r.rhs - 0.001) return false;
-        if (r.tipo === "=" && Math.abs(val - r.rhs) > 0.001) return false;
-      }
-      return x >= 0 && y >= 0;
+  // Restricciones
+  const cons = [];
+  for(const ln of lines){
+    const m = ln.match(/^(.+?)\s*(<=|>=|==|=)\s*([+\-]?\d+(?:[.,]\d+)?)\s*$/);
+    if(!m) continue;
+    const LHS = m[1], sgn = (m[2]==='=')?'==':m[2], rhs = normNum(m[3]);
+    const row = {};
+    let mm;
+    while((mm = TERM_RE.exec(LHS))!==null){
+      const coefStr = mm[1].replace(/\s+/g,'');
+      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : normNum(coefStr);
+      const v = mm[2];
+      row[v] = (row[v]||0) + coef;
+      vars.add(v);
     }
+    if(Object.keys(row).length) cons.push({row, sign: sgn, rhs});
+  }
 
-    function resolver() {
-      const tipoOpt = document.getElementById('tipoOptimizacion').value;
-      const ctx = document.getElementById('grafica').getContext('2d');
-      if (chart) chart.destroy();
+  // No negatividad si se menciona (heurística)
+  const bounds = {};
+  if(/\b(no\s*negativ|x[,\sy]*>=?\s*0|y\s*>=?\s*0)/i.test(t)){
+    vars.forEach(v=> bounds[v] = {lb:0});
+  }
 
-      const objStr = document.getElementById("objetivo").value.trim();
-      const restStr = document.getElementById("restricciones").value.trim().split("\n");
+  const V = Array.from(vars);
+  const cvec = V.map(v=> c[v]||0);
+  const A = cons.map(con=> {
+    const row = V.map(v=> con.row[v]||0);
+    return {...con, rowArr: row};
+  });
+  return {sense, V, cvec, A, bounds};
+}
 
-      const objCoefs = parseExpresion(objStr);
+function parseLP(raw){
+  const t = raw.replace(/\r/g,'');
+  const sense = /minimize/i.test(t)? 'min' : 'max';
+  const objSec = t.match(/(?:maximize|minimize)\s*(.*?)\s*subject\s*to/is)
+               || t.match(/(?:maximize|minimize)\s*(.*?)\s*(?:bounds|binary|general|end)/is);
+  const Vset = new Set(); const c = {};
+  if(objSec){
+    const expr = objSec[1];
+    let m; while((m=TERM_RE.exec(expr))!==null){
+      const coefStr = m[1].replace(/\s+/g,'');
+      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : Number(coefStr.replace(',','.'));
+      const v = m[2]; c[v]=(c[v]||0)+coef; Vset.add(v);
+    }
+  }
+  const st = t.split(/subject\s*to/i)[1] || '';
+  const tail = st.split(/bounds|binary|general|end/i)[0] || '';
+  const lines = tail.split(/\n|;/).map(s=>s.trim()).filter(Boolean);
+  const cons=[]; lines.forEach(ln=>{
+    const m = ln.match(/(.+?)\s*(<=|>=|=)\s*([+\-]?\d+(?:[.,]\d+)?)/i);
+    if(!m) return;
+    const LHS=m[1], sgn=(m[2]==='=')?'==':m[2], rhs=normNum(m[3]);
+    const row={}; let mm;
+    while((mm=TERM_RE.exec(LHS))!==null){
+      const coefStr = mm[1].replace(/\s+/g,'');
+      const coef = (coefStr===''||coefStr==='+')? 1 : (coefStr==='-')? -1 : normNum(coefStr);
+      const v=mm[2]; row[v]=(row[v]||0)+coef; Vset.add(v);
+    }
+    cons.push({row, sign: sgn, rhs});
+  });
+  // Bounds
+  const boundsTxt = (t.split(/bounds/i)[1]||'').split(/binary|general|end/i)[0]||'';
+  const bounds={};
+  boundsTxt.split(/\n|;/).map(s=>s.trim()).filter(Boolean).forEach(ln=>{
+    let m = ln.match(/([+\-]?\d+(?:[.,]\d+)?)\s*<=\s*([a-zA-Z]\w*)\s*<=\s*([+\-]?\d+(?:[.,]\d+)?)/i);
+    if(m){ const v=m[2]; bounds[v]={lb:normNum(m[1]), ub:normNum(m[3])}; return; }
+    m = ln.match(/([a-zA-Z]\w*)\s*>=\s*([+\-]?\d+(?:[.,]\d+)?)/i);
+    if(m){ const v=m[1]; bounds[v]={...(bounds[v]||{}), lb:normNum(m[2])}; return; }
+    m = ln.match(/([a-zA-Z]\w*)\s*<=\s*([+\-]?\d+(?:[.,]\d+)?)/i);
+    if(m){ const v=m[1]; bounds[v]={...(bounds[v]||{}), ub:normNum(m[2])}; return; }
+    m = ln.match(/([a-zA-Z]\w*)\s+free/i);
+    if(m){ const v=m[1]; bounds[v]={lb:-Infinity, ub:Infinity}; return; }
+  });
+  const V = Array.from(Vset);
+  const cvec = V.map(v=> c[v]||0);
+  const A = cons.map(con=> ({...con, rowArr: V.map(v=> con.row[v]||0)}));
+  return {sense, V, cvec, A, bounds};
+}
 
-      const restricciones = [];
-      for (let r of restStr) {
-        r = normalizarSimbolos(r);
-        const match = r.match(/(.+?)(<=|>=|=)(.+)/);
-        if (!match) continue;
-        const lhs = match[1].trim();
-        const tipo = match[2];
-        const rhs = parseFloat(match[3]);
-        const coefs = parseExpresion(lhs);
-        restricciones.push({ coefs, tipo, rhs });
+function parseMPS(raw){
+  const t = raw.replace(/\r/g,'');
+  const lines = t.split('\n');
+  const rows=[], cols=[], rhs=[], bnds=[];
+  let sec='';
+  lines.forEach(L=>{
+    const ln = L.trim();
+    if(!ln) return;
+    if(/^(name|rows|columns|rhs|bounds|endata)/i.test(ln)){ sec=ln.split(/\s+/)[0].toUpperCase(); return; }
+    if(sec==='ROWS') rows.push(ln);
+    else if(sec==='COLUMNS') cols.push(ln);
+    else if(sec==='RHS') rhs.push(ln);
+    else if(sec==='BOUNDS') bnds.push(ln);
+  });
+  const rowType={}, rowIdx={}; let objRow=null;
+  rows.forEach(r=>{
+    const m = r.match(/^([NLG E])\s+(\S+)/i);
+    if(m){ const t=m[1].trim().toUpperCase(), name=m[2]; rowType[name]=t; rowIdx[name]=Object.keys(rowIdx).length; if(t==='N') objRow=name; }
+  });
+  const Vset = new Set(), Amap={};
+  cols.forEach(c=>{
+    const m = c.trim().split(/\s+/);
+    if(m.length>=3){
+      const col = m[0], r1=m[1], v1=parseFloat(m[2]);
+      Vset.add(col);
+      Amap[r1] = Amap[r1]||{}; Amap[r1][col]=(Amap[r1][col]||0)+v1;
+      if(m.length>=5){ const r2=m[3], v2=parseFloat(m[4]); Amap[r2]=Amap[r2]||{}; Amap[r2][col]=(Amap[r2][col]||0)+v2; }
+    }
+  });
+  let RHS={};
+  rhs.forEach(r=>{
+    const m = r.trim().split(/\s+/);
+    if(m.length>=3){ const row=m[1], v=parseFloat(m[2]); RHS[row]=v; }
+    if(m.length>=5){ const row2=m[3], v2=parseFloat(m[4]); RHS[row2]=v2; }
+  });
+  const cons=[];
+  Object.keys(rowType).forEach(r=>{
+    if(r===objRow) return;
+    const typ=rowType[r]; const sign = typ==='L'?'<=': typ==='G'?'>=':'==';
+    const row=Amap[r]||{};
+    cons.push({row, sign, rhs: RHS[r]||0});
+  });
+  const c={};
+  const obj = Amap[objRow]||{};
+  Object.keys(obj).forEach(v=> c[v]=(c[v]||0)+obj[v]);
+  const V = Array.from(Vset);
+  const cvec = V.map(v=> c[v]||0);
+  const A = cons.map(con=> ({...con, rowArr: V.map(v=> con.row[v]||0)}));
+  return {sense:'min', V, cvec, A, bounds:{}};
+}
+
+function parseUniversal(texto){
+  const lower = texto.toLowerCase();
+  if(/\bmax(?:imize|imizar)?\b|\bmin(?:imize|imizar)?\b/.test(lower) && /subject\s*to/i.test(texto)){
+    return parseLP(texto);
+  }
+  if(/^name\b|\brows\b|\bcolumns\b|\brhs\b|\bbounds\b|\bendata\b/i.test(texto)){
+    return parseMPS(texto);
+  }
+  return parseTextoLibre(texto);
+}
+
+/* ===========================
+   4) Simplex Fase I/II (LP)
+   =========================== */
+function simplexSolve(model){
+  const n = model.V.length, m = model.A.length;
+  const isMax = model.sense==='max';
+  const c = model.cvec.slice();
+  const toMinC = isMax ? c.map(x=> -x) : c.slice();
+
+  // Construcción de tableau con slack/exceso/artificial
+  let rows=[], basis=[];
+  for(let i=0;i<m;i++){
+    const {rowArr, sign, rhs} = model.A[i];
+    const base = new Array(n).fill(0).map((_,j)=> rowArr[j]||0);
+    const slack = new Array(m).fill(0);
+    const art = new Array(m).fill(0);
+    if(sign==='<='){ slack[i]=1; }
+    else if(sign==='>='){ slack[i]=-1; art[i]=1; }
+    else if(sign==='=='){ art[i]=1; }
+    rows.push([...base, ...slack, ...art, rhs]);
+    if(sign==='<=') basis.push(n+i); else basis.push(n+m+i);
+  }
+  const totalCols = n + m + m;
+  let T = rows.map(r=>{ const row = new Array(totalCols+1).fill(0); for(let j=0;j<r.length;j++) row[j]=r[j]; return row; });
+
+  // Fase I: minimizar suma de artificiales
+  let obj1 = new Array(totalCols+1).fill(0);
+  for(let i=0;i<m;i++){
+    if(basis[i]===n+m+i){
+      for(let j=0;j<=totalCols;j++) obj1[j] += T[i][j];
+    }
+  }
+  obj1 = obj1.map(v=> -v);
+  T.unshift(obj1);
+  simplexCore(T, basis);
+  if(Math.abs(T[0][totalCols])>1e-8) return {error:'Infactible (Fase I > 0).'};
+
+  // Fase II: objetivo real
+  const obj2 = new Array(totalCols+1).fill(0);
+  for(let j=0;j<n;j++) obj2[j] = toMinC[j]||0;
+  T[0] = obj2;
+  for(let i=1;i<T.length;i++){
+    const bj = basis[i-1];
+    const factor = T[0][bj];
+    if(Math.abs(factor)>1e-12){
+      for(let j=0;j<=totalCols;j++) T[0][j] -= factor * T[i][j];
+    }
+  }
+  simplexCore(T, basis);
+
+  // Solución
+  const sol = new Array(n).fill(0);
+  const RHS = totalCols;
+  for(let i=1;i<T.length;i++){
+    const bj = basis[i-1];
+    if(bj < n) sol[bj] = T[i][RHS];
+  }
+  const Z = isMax ? -T[0][RHS] : T[0][RHS];
+
+  // Slacks
+  const slackVals = new Array(m).fill(0);
+  for(let i=1;i<T.length;i++){
+    const bj = basis[i-1];
+    if(bj>=n && bj<n+m) slackVals[bj-n] = T[i][RHS];
+  }
+
+  // Duales y costos reducidos (si B invertible)
+  function inv(mat){
+    const n=mat.length;
+    const A=mat.map(r=>r.slice());
+    const I=Array.from({length:n},(_,i)=> Array.from({length:n},(__,j)=> i===j?1:0));
+    for(let i=0;i<n;i++){
+      let piv=i;
+      for(let r=i;r<n;r++) if(Math.abs(A[r][i])>Math.abs(A[piv][i])) piv=r;
+      if(Math.abs(A[piv][i])<1e-12) throw new Error('B no invertible');
+      [A[i],A[piv]]=[A[piv],A[i]]; [I[i],I[piv]]=[I[piv],I[i]];
+      const p=A[i][i];
+      for(let j=0;j<n;j++){ A[i][j]/=p; I[i][j]/=p; }
+      for(let r=0;r<n;r++) if(r!==i){
+        const f=A[r][i];
+        for(let j=0;j<n;j++){ A[r][j]-=f*A[i][j]; I[r][j]-=f*I[i][j]; }
       }
+    }
+    return I;
+  }
+  let yT=null, reduced=null;
+  try{
+    // Construir B y cB
+    const mRows = T.length-1;
+    const B = Array.from({length:mRows}, ()=> Array(mRows).fill(0));
+    const cB = Array(mRows).fill(0);
+    for(let i=1;i<T.length;i++){
+      const bj = basis[i-1];
+      for(let r=1;r<T.length;r++) B[i-1][r-1]=T[r][bj];
+      cB[i-1] = (bj<n)? toMinC[bj] : 0;
+    }
+    const Binv = inv(B);
+    yT = new Array(mRows).fill(0);
+    for(let j=0;j<mRows;j++){
+      for(let k=0;k<mRows;k++) yT[j] += cB[k]*Binv[k][j];
+    }
+    reduced = new Array(n).fill(0);
+    for(let j=0;j<n;j++){
+      const Aj = model.A.map(con=> con.rowArr[j]||0);
+      let yTA=0; for(let k=0;k<mRows;k++) yTA += yT[k]*Aj[k];
+      reduced[j] = (isMax ? c[j] : toMinC[j]) - (isMax ? yTA : -yTA);
+    }
+    if(isMax){ yT = yT.map(v=> -v); } // sombra para <= en max
+  }catch(_e){}
 
-      const puntos = [];
-      for (let i = 0; i < restricciones.length; i++) {
-        for (let j = i + 1; j < restricciones.length; j++) {
-          const p = interseccion(restricciones[i], restricciones[j]);
-          if (p && esFactible(p, restricciones)) {
-            const z = objCoefs[0]*p[0] + objCoefs[1]*p[1];
-            puntos.push({ punto: p, z });
-          }
-        }
+  return {optimalValue: Z, x: sol, slack: slackVals, dual: yT, reduced, basis, tableau:T, isMax};
+}
+
+function simplexCore(T, basis){
+  const rows = T.length, cols=T[0].length, RHS=cols-1;
+  let iter=0;
+  while(iter++<2000){
+    // Columna pivote (regla de Bland)
+    let pc=-1;
+    for(let j=0;j<RHS;j++){
+      if(T[0][j] < -1e-12){ pc=j; break; }
+    }
+    if(pc===-1) break; // óptimo
+    // Fila pivote (mínima razón)
+    let pr=-1, best=Infinity;
+    for(let i=1;i<rows;i++){
+      const a=T[i][pc];
+      if(a>1e-12){
+        const r=T[i][RHS]/a;
+        if(r<best - 1e-12){ best=r; pr=i; }
       }
+    }
+    if(pr===-1) throw new Error('No acotado');
+    // pivotear
+    const piv=T[pr][pc];
+    for(let j=0;j<cols;j++) T[pr][j]/=piv;
+    for(let i=0;i<rows;i++){
+      if(i===pr) continue;
+      const f=T[i][pc];
+      if(Math.abs(f)>1e-12) for(let j=0;j<cols;j++) T[i][j]-=f*T[pr][j];
+    }
+    basis[pr-1]=pc;
+  }
+}
 
-      if (puntos.length === 0) {
-        document.getElementById("resultado").innerHTML = "<b>⚠ No hay región factible. Verifica si las restricciones se cruzan en una zona común.</b>";
-        return;
-      }
+/* ===========================
+   5) Render interpretación y resultados + gráficos
+   =========================== */
+function renderInterpretacion(model){
+  let h = '';
+  h += `<div><b>${model.sense==='min'?'Minimización':'Maximización'}</b> — Objetivo con ${model.V.length} variable(s)</div>`;
+  h += `<div class="pill">Variables: ${model.V.join(', ') || '—'}</div>`;
+  if(model.cvec?.length){
+    const obj = model.V.map((v,i)=> (model.cvec[i]!==0)? `${fmt(model.cvec[i])}${v}`:'' ).filter(Boolean).join(' + ') || '0';
+    h += `<div class="muted" style="margin-top:6px">Z = ${obj}</div>`;
+  }
+  if(model.A.length){
+    h += `<table><tr><th>#</th><th>Restricción</th></tr>`;
+    model.A.forEach((r,i)=>{
+      const expr = model.V.map((v,j)=> r.rowArr[j]? `${fmt(r.rowArr[j])}${v}`:'' ).filter(Boolean).join(' + ') || '0';
+      h += `<tr><td>${i+1}</td><td>${expr} ${r.sign.replace('==','=')} ${fmt(r.rhs)}</td></tr>`;
+    });
+    h += `</table>`;
+  } else {
+    h += `<div class="warn">No se detectaron restricciones.</div>`;
+  }
+  byId('interpretacion').innerHTML = h;
+}
 
-      const allX = puntos.map(p => p.punto[0]);
-      const allY = puntos.map(p => p.punto[1]);
+function renderResultados(model, sol){
+  if(sol.error){ byId('resultados').innerHTML = `<div class="err">${sol.error}</div>`; return; }
+  let h = `<div class="ok">Valor ${model.sense==='min'?'mínimo':'máximo'}: <b>${fmt(sol.optimalValue)}</b></div>`;
 
-      puntos.sort((a, b) => tipoOpt === 'max' ? b.z - a.z : a.z - b.z);
-      const optimo = puntos[0];
+  h += `<h4>Variables</h4><table><tr><th>Variable</th><th>Valor</th><th>Costo reducido (LP)</th></tr>`;
+  model.V.forEach((v,i)=>{
+    h += `<tr><td>${v}</td><td>${fmt(sol.x[i]||0)}</td><td>${sol.reduced!=null? fmt(sol.reduced[i]||0) : '—'}</td></tr>`;
+  });
+  h += `</table>`;
 
-      const lineas = restricciones.map((r, index) => {
-        const puntosLinea = [];
-        let etiqueta = ${r.coefs[0]}x + ${r.coefs[1]}y ${r.tipo} ${r.rhs};
-        for (let x = 0; x <= Math.max(...allX) + 5; x += 0.5) {
-          const a = r.coefs[0];
-          const b = r.coefs[1];
-          const c = r.rhs;
-          if (b !== 0) {
-            const y = (c - a * x) / b;
-            if (y >= 0 && y <= Math.max(...allY) + 5) {
-              puntosLinea.push({ x, y });
-            }
-          }
-        }
-        return {
-          label: etiqueta,
-          data: puntosLinea,
-          borderColor: hsl(${index * 60}, 70%, 50%),
-          borderWidth: 1,
-          fill: false,
-          showLine: true,
-          pointRadius: 0,
-          type: 'line'
-        };
+  h += `<h4>Restricciones</h4><table><tr><th>#</th><th>Tipo</th><th>RHS</th><th>Slack</th><th>Vinculante</th><th>Precio dual (LP)</th></tr>`;
+  model.A.forEach((r,i)=>{
+    const slack = sol.slack? sol.slack[i]||0 : 0;
+    const bind = (r.sign==='<=') ? Math.abs(slack) < 1e-7 : (r.sign==='==') ? true : '—';
+    h += `<tr><td>${i+1}</td><td>${r.sign.replace('==','=')}</td><td>${fmt(r.rhs)}</td><td>${fmt(slack)}</td><td>${bind===true?'Sí':(bind==='—'?'—':'No')}</td><td>${sol.dual? fmt(sol.dual[i]||0): '—'}</td></tr>`;
+  });
+  h += `</table>`;
+
+  if(model.V.length===2){
+    const chartsId = 'graph-2d';
+    h += `<h4>Región factible (2D)</h4><div id="${chartsId}" class="graph"></div>`;
+    byId('resultados').innerHTML = h;
+    graficar2D(model, sol, chartsId);
+  } else {
+    byId('resultados').innerHTML = h;
+  }
+}
+
+/* ========= Gráfica 2D: región, líneas, vértices, óptimo y recta objetivo ========= */
+function graficar2D(model, sol, id){
+  const ec = echarts.init(byId(id));
+  const verts = calcularVertices(model);
+  const poly = verts.map(p=>[p[0],p[1]]);
+  const opt = [sol.x[0]||0, sol.x[1]||0];
+
+  // Líneas de restricción (solo 2D válidas)
+  const lines = model.A.map(r=>{
+    const a = r.rowArr[0]||0, b = r.rowArr[1]||0, c = r.rhs;
+    // y = (c - a x)/b  o  x = c/a si b=0
+    return {a,b,c,sign:r.sign};
+  });
+
+  const maxX = Math.max(1, ...poly.map(p=>p[0]), opt[0]) * 1.2;
+  const maxY = Math.max(1, ...poly.map(p=>p[1]), opt[1]) * 1.2;
+
+  // Recta objetivo a nivel óptimo: c1 x + c2 y = Z*
+  const c1 = model.cvec[0]||0, c2=model.cvec[1]||0, Z = sol.optimalValue;
+  let objLine = [];
+  if(Math.abs(c2)>1e-12){
+    objLine = [[0, Z/c2], [maxX, (Z - c1*maxX)/c2]];
+  }else if(Math.abs(c1)>1e-12){
+    const x = Z/c1; objLine = [[x, 0], [x, maxY]];
+  }
+
+  const series = [];
+  if(poly.length>=3){
+    series.push({
+      name:'Región factible',
+      type:'line',
+      data:[...poly, poly[0]],
+      areaStyle:{},
+      lineStyle:{width:1},
+      symbol:'none',
+      emphasis:{disabled:true}
+    });
+    series.push({ name:'Vértices', type:'scatter', data:poly, symbolSize:8 });
+  }else{
+    series.push({ name:'Región factible', type:'scatter', data:poly, symbolSize:8 });
+  }
+
+  // Líneas de restricción
+  lines.forEach((L,idx)=>{
+    let pts=[];
+    if(Math.abs(L.b)>1e-12){
+      const y0 = L.c/L.b;
+      const yX = (L.c - L.a*maxX)/L.b;
+      pts = [[0,y0],[maxX,yX]];
+    }else if(Math.abs(L.a)>1e-12){
+      const x = L.c/L.a;
+      pts = [[x,0],[x,maxY]];
+    }
+    series.push({
+      name:`R${idx+1}: ${fmt(L.a)}x + ${fmt(L.b)}y ${L.sign.replace('==','=')} ${fmt(L.c)}`,
+      type:'line',
+      data:pts,
+      showSymbol:false,
+      lineStyle:{type:'dashed', width:1}
+    });
+  });
+
+  // Punto óptimo
+  series.push({ name:'Óptimo', type:'scatter', data:[opt], symbolSize:14 });
+
+  // Recta objetivo al nivel óptimo
+  if(objLine.length){
+    series.push({
+      name:'Recta objetivo (Z*)',
+      type:'line',
+      data:objLine,
+      showSymbol:false,
+      lineStyle:{width:2}
+    });
+  }
+
+  const option = {
+    tooltip:{trigger:'item'},
+    legend:{type:'scroll'},
+    xAxis:{type:'value', name:model.V[0], min:0, max:maxX},
+    yAxis:{type:'value', name:model.V[1], min:0, max:maxY},
+    series
+  };
+  ec.setOption(option);
+}
+
+/* ======= Vértices de la región factible (intersecciones + filtrado) ======= */
+function calcularVertices(model){
+  const rs = model.A.map(r=>({a:r.rowArr[0]||0, b:r.rowArr[1]||0, c:r.rhs, sign:r.sign}));
+  // Añade x>=0, y>=0 si no están explícitas (para el grafo)
+  rs.push({a:1,b:0,c:Infinity,sign:'<='}); // x <= +∞ (solo para intersecciones con ejes)
+  rs.push({a:0,b:1,c:Infinity,sign:'<='}); // y <= +∞
+  const verts=[];
+  // Cortes con ejes de cada restricción (<= típicas)
+  model.A.forEach(r=>{
+    const a=r.rowArr[0]||0, b=r.rowArr[1]||0, c=r.rhs;
+    if(Math.abs(b)>1e-12){ const y=c/b; if(y>=0) verts.push([0,y]); }
+    if(Math.abs(a)>1e-12){ const x=c/a; if(x>=0) verts.push([x,0]); }
+  });
+  // Intersecciones par a par
+  for(let i=0;i<rs.length;i++) for(let j=i+1;j<rs.length;j++){
+    const {a:a1,b:b1,c:c1}=rs[i], {a:a2,b:b2,c:c2}=rs[j];
+    const det=a1*b2-a2*b1; if(Math.abs(det)<1e-12) continue;
+    const x=(b2*c1-b1*c2)/det; const y=(a1*c2-a2*c1)/det;
+    const p=[x,y];
+    if(Number.isFinite(x)&&Number.isFinite(y)&&x>=-1e-9&&y>=-1e-9 && esFactible2D(p, model)) verts.push([Math.max(0,x),Math.max(0,y)]);
+  }
+  if(!verts.length) return [[0,0]];
+  // Ordenar CCW + de-duplicar
+  const cx=verts.reduce((s,p)=>s+p[0],0)/verts.length, cy=verts.reduce((s,p)=>s+p[1],0)/verts.length;
+  verts.sort((A,B)=> Math.atan2(A[1]-cy,A[0]-cx)-Math.atan2(B[1]-cy,B[0]-cx));
+  const uniq=[]; const eps=1e-6;
+  for(const v of verts){ if(!uniq.some(u=>Math.hypot(u[0]-v[0],u[1]-v[1])<eps)) uniq.push(v); }
+  return uniq;
+}
+function esFactible2D(p, model){
+  const [x,y]=p;
+  for(const r of model.A){
+    const val = (r.rowArr[0]||0)*x + (r.rowArr[1]||0)*y;
+    if(r.sign==='<='){ if(val>r.rhs+1e-7) return false; }
+    if(r.sign==='>='){ if(val<r.rhs-1e-7) return false; }
+    if(r.sign==='=='||r.sign==='='){ if(Math.abs(val-r.rhs)>1e-7) return false; }
+  }
+  if(x<0||y<0) return false;
+  return true;
+}
+
+/* ===========================
+   6) Flujo principal
+   =========================== */
+byId('btn-analizar').addEventListener('click', ()=>{
+  const raw = entrada.value.trim();
+  if(!raw){ alert('Ingresa texto o carga un archivo/imagen.'); return; }
+  byId('interpretacion').innerHTML = '<div class="loading"></div> Interpretando…';
+  byId('resultados').innerHTML = '<div class="loading"></div> Resolviendo…';
+  setTimeout(()=>{
+    try{
+      const bloques = raw.split(/\n\s*(?:---+|Problema\s*\d+|Problem\s*\d+|Ejercicio|Exercise|#\s+\S+)/i).map(s=>s.trim()).filter(Boolean);
+      byId('interpretacion').innerHTML='';
+      byId('resultados').innerHTML='';
+      bloques.forEach((bloque, idx)=>{
+        const model = parseUniversal(bloque);
+        // Por defecto MAX si no se dijo lo contrario
+        if(!/min(?:imizar|imize)/i.test(bloque)) model.sense='max';
+        renderInterpretacion(model);
+        const sol = simplexSolve(model);
+        renderResultados(model, sol);
+        if(idx<bloques.length-1) log('— Bloque resuelto —');
       });
-
-      const centro = puntos.reduce((acc, p) => [acc[0] + p.punto[0], acc[1] + p.punto[1]], [0,0]).map(v => v / puntos.length);
-      puntos.sort((a, b) => {
-        const angA = Math.atan2(a.punto[1] - centro[1], a.punto[0] - centro[0]);
-        const angB = Math.atan2(b.punto[1] - centro[1], b.punto[0] - centro[0]);
-        return angA - angB;
-      });
-
-      const region = {
-        label: "Región Factible",
-        data: puntos.map(p => ({ x: p.punto[0], y: p.punto[1] })),
-        backgroundColor: "rgba(0, 255, 0, 0.2)",
-        borderColor: "green",
-        fill: true,
-        type: 'line',
-        tension: 0.1,
-        showLine: true,
-        pointRadius: 0
-      };
-
-      const datasets = [region,
-        {
-          label: "Región Factible",
-          data: puntos.map(p => ({ x: p.punto[0], y: p.punto[1] })),
-          backgroundColor: "rgba(0, 255, 0, 0.4)",
-          pointRadius: 5,
-          type: "scatter"
-        },
-        {
-          label: "Óptimo",
-          data: [{ x: optimo.punto[0], y: optimo.punto[1] }],
-          backgroundColor: "red",
-          pointRadius: 7,
-          type: "scatter"
-        }
-      ];
-
-      chart = new Chart(ctx, {
-        plugins: [ChartDataLabels],
-        type: "scatter",
-        data: { datasets: [...lineas, ...datasets] },
-        options: {
-          responsive: true,
-          scales: {
-            x: {
-              min: 0,
-              max: Math.max(...allX) + 5,
-              title: { display: true, text: 'x' }
-            },
-            y: {
-              min: 0,
-              max: Math.max(...allY) + 5,
-              title: { display: true, text: 'y' }
-            }
-          },
-          plugins: {
-            datalabels: {
-              display: function(context) {
-                return context.dataset.label && context.dataIndex === 0;
-              },
-              align: 'top',
-              anchor: 'end',
-              font: {
-                weight: 'bold',
-                size: 10
-              },
-              formatter: function(value, context) {
-                const dataset = context.dataset;
-                const label = dataset.label;
-                if (label === 'Región Factible' || label === 'Óptimo') {
-                  const point = dataset.data[context.dataIndex];
-                  return (${point.x.toFixed(1)}, ${point.y.toFixed(1)});
-                }
-                return label;
-              }
-            }
-          }
-        }
-      });
-
-      document.getElementById("resultado").innerHTML = `
-        <h3>🔍 Resultado:</h3>
-        <b>Tipo de optimización:</b> ${tipoOpt === 'max' ? 'Maximización' : 'Minimización'}<br>
-        <b>Z ${tipoOpt === 'max' ? 'Máxima' : 'Mínima'}:</b> ${optimo.z.toFixed(2)}<br>
-        <b>x:</b> ${optimo.punto[0].toFixed(2)}<br>
-        <b>y:</b> ${optimo.punto[1].toFixed(2)}
-      `;
+    }catch(err){
+      byId('resultados').innerHTML = `<div class="err">Error: ${err.message}</div>`;
+      console.error(err);
     }
-  </script>
+  }, 30);
+});
 
+/* ===========================
+   7) Pruebas automáticas
+   =========================== */
+byId('btn-tests').addEventListener('click', ()=>{
+  const tests = [
+    { name:'LP 2D clásico (Max)', txt:`Z = 80x + 50y; 4x + 3y ≤ 240; 2x + y ≤ 100; x,y ≥ 0`, sense:'max' },
+    { name:'LP estilo .lp', txt:`Maximize
+  obj: 3 U + 5 H
+Subject To
+  inv: 25 U + 50 H <= 80000
+  riesgo: 0.5 U + 0.25 H <= 700
+Bounds
+  U >= 0
+  H >= 0
+End`, sense:'max' },
+    { name:'MPS básico (min por convención)', txt:`NAME TEST
+ROWS
+ N OBJ
+ L R1
+ L R2
+COLUMNS
+ X R1 4 R2 2
+ Y R1 3 R2 1
+RHS
+ RHS1 R1 240 R2 100
+ENDATA` }
+  ];
+  logArea.textContent='';
+  tests.forEach(t=>{
+    try{
+      const model = parseUniversal(t.txt);
+      if(t.sense) model.sense=t.sense;
+      const sol = simplexSolve(model);
+      log(`✔ ${t.name}: OK (Z=${sol.optimalValue?.toFixed?.(4)})`);
+    }catch(e){
+      log(`✖ ${t.name}: ${e.message}`);
+    }
+  });
+});
+</script>
 </body>
 </html>
